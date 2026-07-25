@@ -74,6 +74,26 @@ final class AppModel: ObservableObject {
     }
   }
 
+  func deleteASRModel(_ id: String) {
+    guard asrModelStatus(id) == .downloaded else { return }
+    do {
+      try NativeASREngine.deleteDownloadedModel(modelID: id)
+      downloadedASRModels.remove(id)
+    } catch {
+      showError(error)
+    }
+  }
+
+  func deleteRefineModel(_ id: String) {
+    guard refineModelStatus(id) == .downloaded else { return }
+    do {
+      try NativeRefineEngine.deleteDownloadedModel(modelID: id)
+      downloadedRefineModels.remove(id)
+    } catch {
+      showError(error)
+    }
+  }
+
   func setRefineEnabled(_ enabled: Bool) {
     guard !state.isDictating else { return }
     if enabled {

@@ -24,10 +24,19 @@ final class NativeASREngine {
   }
 
   nonisolated static func isDownloaded(modelID: String) -> Bool {
-    let folder = FileManager.default.homeDirectoryForCurrentUser
+    FileManager.default.fileExists(atPath: modelDirectory(modelID: modelID).path)
+  }
+
+  nonisolated static func deleteDownloadedModel(modelID: String) throws {
+    let directory = modelDirectory(modelID: modelID)
+    guard FileManager.default.fileExists(atPath: directory.path) else { return }
+    try FileManager.default.removeItem(at: directory)
+  }
+
+  private nonisolated static func modelDirectory(modelID: String) -> URL {
+    FileManager.default.homeDirectoryForCurrentUser
       .appending(path: "Documents/huggingface/models/argmaxinc/whisperkit-coreml")
       .appending(path: "openai_whisper-\(modelID)")
-    return FileManager.default.fileExists(atPath: folder.path)
   }
 
   func startRecording() throws {

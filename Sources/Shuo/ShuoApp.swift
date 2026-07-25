@@ -105,6 +105,7 @@ private struct MenuContent: View {
 private struct SettingsView: View {
   @ObservedObject var model: AppModel
   @ObservedObject private var settings: AppSettings
+  @State private var pendingModelDeletion: ModelDeletion?
 
   init(model: AppModel) {
     self.model = model
@@ -122,7 +123,14 @@ private struct SettingsView: View {
                 ModelRow(
                   name: option.name,
                   detail: option.detail,
-                  status: model.asrModelStatus(option.id)
+                  status: model.asrModelStatus(option.id),
+                  deleteAction: {
+                    pendingModelDeletion = ModelDeletion(
+                      id: option.id,
+                      name: option.name,
+                      kind: .transcription
+                    )
+                  }
                 ) {
                   model.selectASRModel(option.id)
                 }
@@ -146,7 +154,14 @@ private struct SettingsView: View {
             ModelRow(
               name: option.name,
               detail: option.detail,
-              status: model.refineModelStatus(option.id)
+              status: model.refineModelStatus(option.id),
+              deleteAction: {
+                pendingModelDeletion = ModelDeletion(
+                  id: option.id,
+                  name: option.name,
+                  kind: .refine
+                )
+              }
             ) {
               model.selectRefineModel(option.id)
             }
@@ -219,35 +234,81 @@ private struct SettingsView: View {
     .formStyle(.grouped)
     .padding()
     .frame(width: 560, height: 560)
+    .alert(
+      "Delete downloaded model?",
+      isPresented: Binding(
+        get: { pendingModelDeletion != nil },
+        set: { if !$0 { pendingModelDeletion = nil } }
+      ),
+      presenting: pendingModelDeletion
+    ) { candidate in
+      Button("Delete", role: .destructive) {
+        switch candidate.kind {
+        case .transcription:
+          model.deleteASRModel(candidate.id)
+        case .refine:
+          model.deleteRefineModel(candidate.id)
+        }
+        pendingModelDeletion = nil
+      }
+      Button("Cancel", role: .cancel) {
+        pendingModelDeletion = nil
+      }
+    } message: { candidate in
+      Text("This removes \(candidate.name) from this Mac. You can download it again later.")
+    }
   }
+}
+
+private struct ModelDeletion {
+  enum Kind {
+    case transcription
+    case refine
+  }
+
+  let id: String
+  let name: String
+  let kind: Kind
 }
 
 private struct ModelRow: View {
   let name: String
   let detail: String
   let status: ModelStatus
+  let deleteAction: () -> Void
   let action: () -> Void
 
   var body: some View {
-    Button(action: action) {
-      HStack(spacing: 10) {
-        statusIcon
-          .frame(width: 18)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(name)
-          Text(detail)
+    HStack(spacing: 10) {
+      Button(action: action) {
+        HStack(spacing: 10) {
+          statusIcon
+            .frame(width: 18)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(name)
+            Text(detail)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          Spacer()
+          Text(status.label)
             .font(.caption)
+            .foregroundStyle(status == .active ? .green : .secondary)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .disabled(status == .active || status == .downloading || status == .activating)
+
+      if status == .downloaded {
+        Button(action: deleteAction) {
+          Image(systemName: "trash")
             .foregroundStyle(.secondary)
         }
-        Spacer()
-        Text(status.label)
-          .font(.caption)
-          .foregroundStyle(status == .active ? .green : .secondary)
+        .buttonStyle(.borderless)
+        .help("Delete downloaded model")
       }
-      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
-    .disabled(status == .active || status == .downloading || status == .activating)
     .padding(.vertical, 3)
   }
 
