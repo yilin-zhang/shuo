@@ -8,6 +8,39 @@ enum ModelStatus: Equatable {
   case downloadRequired
   case downloading
   case activating
+  case deleting
+
+  static func resolve(
+    id: String,
+    activeID: String?,
+    loadingID: String?,
+    isDownloaded: Bool,
+    isDeleting: Bool = false
+  ) -> Self {
+    if isDeleting { return .deleting }
+    if activeID == id { return .active }
+    if loadingID == id { return isDownloaded ? .activating : .downloading }
+    return isDownloaded ? .downloaded : .downloadRequired
+  }
+}
+
+struct ModelStartupPlan: Equatable {
+  let needsSetup: Bool
+  let isInitialSetup: Bool
+  let shouldDisableRefine: Bool
+
+  static func resolve(
+    hasASR: Bool,
+    hasRefine: Bool,
+    refineEnabled: Bool,
+    hasCompletedInitialSetup: Bool
+  ) -> Self {
+    Self(
+      needsSetup: !hasASR,
+      isInitialSetup: !hasASR && !hasCompletedInitialSetup,
+      shouldDisableRefine: refineEnabled && !hasRefine
+    )
+  }
 }
 
 @MainActor
@@ -28,6 +61,8 @@ final class AppModel: ObservableObject {
   @Published private var downloadedRefineModels = Set(
     ModelCatalog.refineModels.lazy.map(\.id).filter(NativeRefineEngine.isDownloaded)
   )
+  @Published private var deletingASRModels = Set<String>()
+  @Published private var deletingRefineModels = Set<String>()
 
   let settings = AppSettings()
 
@@ -58,18 +93,22 @@ final class AppModel: ObservableObject {
     refreshPermissions()
     do {
       try hotkey.start()
-      if NativeASREngine.isDownloaded(modelID: settings.asrModel) {
+      let plan = ModelStartupPlan.resolve(
+        hasASR: NativeASREngine.isDownloaded(modelID: settings.asrModel),
+        hasRefine: NativeRefineEngine.isDownloaded(modelID: settings.refineModel),
+        refineEnabled: settings.refineEnabled,
+        hasCompletedInitialSetup: settings.hasCompletedInitialSetup
+      )
+      if plan.shouldDisableRefine {
+        settings.refineEnabled = false
+      }
+      if !plan.needsSetup {
         if !settings.hasCompletedInitialSetup {
           settings.hasCompletedInitialSetup = true
         }
-        if settings.refineEnabled,
-          !NativeRefineEngine.isDownloaded(modelID: settings.refineModel)
-        {
-          settings.refineEnabled = false
-        }
         reloadModels()
       } else {
-        requestModelSetup()
+        requestModelSetup(isInitial: plan.isInitialSetup)
       }
     } catch {
       showError(error)
@@ -130,16 +169,20 @@ final class AppModel: ObservableObject {
       loadingModel = nil
       transition(to: .disabled)
     }
+    deletingASRModels.insert(id)
     Task {
       if status == .active {
         asr.unload()
       }
       do {
-        try NativeASREngine.deleteDownloadedModel(modelID: id)
+        try await Task.detached(priority: .utility) {
+          try NativeASREngine.deleteDownloadedModel(modelID: id)
+        }.value
         downloadedASRModels.remove(id)
       } catch {
         showError(error)
       }
+      deletingASRModels.remove(id)
     }
   }
 
@@ -153,12 +196,15 @@ final class AppModel: ObservableObject {
       loadingModel = nil
       transition(to: settings.enabled ? .idle : .disabled)
     }
+    deletingRefineModels.insert(id)
     Task {
       if status == .active {
         await refiner.unload()
       }
       do {
-        try NativeRefineEngine.deleteDownloadedModel(modelID: id)
+        try await Task.detached(priority: .utility) {
+          try NativeRefineEngine.deleteDownloadedModel(modelID: id)
+        }.value
         downloadedRefineModels.remove(id)
         if downloadedRefineModels.isEmpty {
           settings.refineEnabled = false
@@ -166,6 +212,7 @@ final class AppModel: ObservableObject {
       } catch {
         showError(error)
       }
+      deletingRefineModels.remove(id)
     }
   }
 
@@ -188,7 +235,8 @@ final class AppModel: ObservableObject {
     modelStatus(
       id: id,
       activeID: activeASRModel,
-      isDownloaded: downloadedASRModels.contains(id)
+      isDownloaded: downloadedASRModels.contains(id),
+      isDeleting: deletingASRModels.contains(id)
     )
   }
 
@@ -196,7 +244,8 @@ final class AppModel: ObservableObject {
     modelStatus(
       id: id,
       activeID: activeRefineModel,
-      isDownloaded: downloadedRefineModels.contains(id)
+      isDownloaded: downloadedRefineModels.contains(id),
+      isDeleting: deletingRefineModels.contains(id)
     )
   }
 
@@ -254,8 +303,8 @@ final class AppModel: ObservableObject {
     }
   }
 
-  private func requestModelSetup() {
-    isInitialModelSetup = !settings.hasCompletedInitialSetup
+  private func requestModelSetup(isInitial: Bool? = nil) {
+    isInitialModelSetup = isInitial ?? !settings.hasCompletedInitialSetup
     needsModelSetup = true
     transition(to: .disabled)
   }
@@ -305,11 +354,16 @@ final class AppModel: ObservableObject {
   private func modelStatus(
     id: String,
     activeID: String?,
-    isDownloaded: Bool
+    isDownloaded: Bool,
+    isDeleting: Bool
   ) -> ModelStatus {
-    if activeID == id { return .active }
-    if loadingModel == id { return isDownloaded ? .activating : .downloading }
-    return isDownloaded ? .downloaded : .downloadRequired
+    ModelStatus.resolve(
+      id: id,
+      activeID: activeID,
+      loadingID: loadingModel,
+      isDownloaded: isDownloaded,
+      isDeleting: isDeleting
+    )
   }
 
   private func handleHotkey(down: Bool) {

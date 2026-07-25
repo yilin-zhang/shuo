@@ -194,71 +194,31 @@ private struct SettingsView: View {
   var body: some View {
     Form {
       Section("Models") {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Transcription").font(.headline)
-          ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
-              ForEach(ModelCatalog.asrModels) { option in
-                ModelRow(
-                  name: option.name,
-                  detail: option.detail,
-                  status: model.asrModelStatus(option.id),
-                  allowsDeletingActive: true,
-                  deleteAction: {
-                    pendingModelDeletion = ModelDeletion(
-                      id: option.id,
-                      name: option.name,
-                      kind: .transcription
-                    )
-                  }
-                ) {
-                  model.selectASRModel(option.id)
-                }
-              }
-            }
-          }
-          .scrollIndicators(.visible)
-          .frame(maxHeight: 180)
-          .padding(8)
-          .background(.background)
-          .clipShape(RoundedRectangle(cornerRadius: 8))
-          .overlay {
-            RoundedRectangle(cornerRadius: 8)
-              .stroke(.separator, lineWidth: 1)
-          }
+        ModelList(
+          title: "Transcription",
+          options: ModelCatalog.asrModels,
+          status: model.asrModelStatus
+        ) { option in
+          pendingModelDeletion = ModelDeletion(
+            id: option.id,
+            name: option.name,
+            kind: .transcription
+          )
+        } select: { option in
+          model.selectASRModel(option.id)
         }
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Refine").font(.headline)
-          ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
-              ForEach(ModelCatalog.refineModels) { option in
-                ModelRow(
-                  name: option.name,
-                  detail: option.detail,
-                  status: model.refineModelStatus(option.id),
-                  allowsDeletingActive: true,
-                  deleteAction: {
-                    pendingModelDeletion = ModelDeletion(
-                      id: option.id,
-                      name: option.name,
-                      kind: .refine
-                    )
-                  }
-                ) {
-                  model.selectRefineModel(option.id)
-                }
-              }
-            }
-          }
-          .scrollIndicators(.visible)
-          .frame(maxHeight: 180)
-          .padding(8)
-          .background(.background)
-          .clipShape(RoundedRectangle(cornerRadius: 8))
-          .overlay {
-            RoundedRectangle(cornerRadius: 8)
-              .stroke(.separator, lineWidth: 1)
-          }
+        ModelList(
+          title: "Refine",
+          options: ModelCatalog.refineModels,
+          status: model.refineModelStatus
+        ) { option in
+          pendingModelDeletion = ModelDeletion(
+            id: option.id,
+            name: option.name,
+            kind: .refine
+          )
+        } select: { option in
+          model.selectRefineModel(option.id)
         }
         Toggle(
           "Refine every transcription",
@@ -360,6 +320,42 @@ private struct SettingsView: View {
   }
 }
 
+private struct ModelList: View {
+  let title: String
+  let options: [ModelOption]
+  let status: (String) -> ModelStatus
+  let delete: (ModelOption) -> Void
+  let select: (ModelOption) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title).font(.headline)
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 8) {
+          ForEach(options) { option in
+            ModelRow(
+              name: option.name,
+              detail: option.detail,
+              status: status(option.id),
+              deleteAction: { delete(option) },
+              action: { select(option) }
+            )
+          }
+        }
+      }
+      .scrollIndicators(.visible)
+      .frame(maxHeight: 180)
+      .padding(8)
+      .background(.background)
+      .clipShape(RoundedRectangle(cornerRadius: 8))
+      .overlay {
+        RoundedRectangle(cornerRadius: 8)
+          .stroke(.separator, lineWidth: 1)
+      }
+    }
+  }
+}
+
 private struct ModelDeletion {
   enum Kind {
     case transcription
@@ -375,7 +371,6 @@ private struct ModelRow: View {
   let name: String
   let detail: String
   let status: ModelStatus
-  var allowsDeletingActive = false
   let deleteAction: () -> Void
   let action: () -> Void
 
@@ -399,9 +394,12 @@ private struct ModelRow: View {
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .disabled(status == .active || status == .downloading || status == .activating)
+      .disabled(
+        status == .active || status == .downloading || status == .activating
+          || status == .deleting
+      )
 
-      if status == .downloaded || (allowsDeletingActive && status == .active) {
+      if status == .downloaded || status == .active {
         Button(action: deleteAction) {
           Image(systemName: "trash")
             .foregroundStyle(.secondary)
@@ -422,7 +420,7 @@ private struct ModelRow: View {
       Image(systemName: "internaldrive").foregroundStyle(.secondary)
     case .downloadRequired:
       Image(systemName: "arrow.down.circle").foregroundStyle(.secondary)
-    case .downloading, .activating:
+    case .downloading, .activating, .deleting:
       ProgressView().controlSize(.small)
     }
   }
@@ -436,6 +434,7 @@ extension ModelStatus {
     case .downloadRequired: "Download required"
     case .downloading: "Downloading…"
     case .activating: "Activating…"
+    case .deleting: "Deleting…"
     }
   }
 }
