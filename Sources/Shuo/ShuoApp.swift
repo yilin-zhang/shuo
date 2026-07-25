@@ -31,12 +31,90 @@ struct ShuoApp: App {
       MenuContent(model: model)
     } label: {
       ShuoStatusIcon(state: model.state)
+        .background(ModelSetupLauncher(model: model))
     }
     .menuBarExtraStyle(.window)
+
+    Window("Choose Models", id: "model-setup") {
+      ModelSetupView(model: model)
+    }
+    .defaultLaunchBehavior(.suppressed)
+    .windowResizability(.contentSize)
 
     Settings {
       SettingsView(model: model)
     }
+  }
+}
+
+private struct ModelSetupLauncher: View {
+  @ObservedObject var model: AppModel
+  @Environment(\.openWindow) private var openWindow
+
+  var body: some View {
+    Color.clear
+      .frame(width: 0, height: 0)
+      .onAppear(perform: openIfNeeded)
+      .onChange(of: model.needsModelSetup) { _, _ in openIfNeeded() }
+  }
+
+  private func openIfNeeded() {
+    guard model.needsModelSetup else { return }
+    openWindow(id: "model-setup")
+    NSApplication.shared.activate(ignoringOtherApps: true)
+  }
+}
+
+private struct ModelSetupView: View {
+  @ObservedObject var model: AppModel
+  @Environment(\.dismissWindow) private var dismissWindow
+  @State private var asrID = ModelCatalog.asrModels[0].id
+  @State private var includeRefine = true
+  @State private var refineID = ModelCatalog.refineModels[0].id
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 18) {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Choose a transcription model")
+          .font(.title2.bold())
+        Text("Models are downloaded once, then transcription runs entirely on this Mac.")
+          .foregroundStyle(.secondary)
+      }
+
+      Picker("Transcription model", selection: $asrID) {
+        ForEach(ModelCatalog.asrModels) { option in
+          Text(option.name).tag(option.id)
+        }
+      }
+
+      if model.isInitialModelSetup {
+        Divider()
+        Toggle("Download a Refine model", isOn: $includeRefine)
+        if includeRefine {
+          Picker("Refine model", selection: $refineID) {
+            ForEach(ModelCatalog.refineModels) { option in
+              Text("\(option.name) — \(option.detail)").tag(option.id)
+            }
+          }
+        }
+      }
+
+      HStack {
+        Spacer()
+        Button("Download and Continue") {
+          model.installSelectedModels(
+            asrID: asrID,
+            includeRefine: model.isInitialModelSetup && includeRefine,
+            refineID: refineID
+          )
+          dismissWindow(id: "model-setup")
+        }
+        .keyboardShortcut(.defaultAction)
+      }
+    }
+    .padding(24)
+    .frame(width: 480)
+    .interactiveDismissDisabled()
   }
 }
 
@@ -59,11 +137,12 @@ private struct MenuContent: View {
         Toggle(
           "",
           isOn: Binding(
-            get: { model.settings.enabled },
+            get: { model.settings.enabled && model.canEnableApp },
             set: { model.setEnabled($0) }
           )
         )
         .labelsHidden()
+        .disabled(!model.canEnableApp)
       }
 
       Text(shortcutHelp)
@@ -124,6 +203,7 @@ private struct SettingsView: View {
                   name: option.name,
                   detail: option.detail,
                   status: model.asrModelStatus(option.id),
+                  allowsDeletingActive: true,
                   deleteAction: {
                     pendingModelDeletion = ModelDeletion(
                       id: option.id,
@@ -147,24 +227,37 @@ private struct SettingsView: View {
               .stroke(.separator, lineWidth: 1)
           }
         }
-        Divider()
         VStack(alignment: .leading, spacing: 8) {
           Text("Refine").font(.headline)
-          ForEach(ModelCatalog.refineModels) { option in
-            ModelRow(
-              name: option.name,
-              detail: option.detail,
-              status: model.refineModelStatus(option.id),
-              deleteAction: {
-                pendingModelDeletion = ModelDeletion(
-                  id: option.id,
+          ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+              ForEach(ModelCatalog.refineModels) { option in
+                ModelRow(
                   name: option.name,
-                  kind: .refine
-                )
+                  detail: option.detail,
+                  status: model.refineModelStatus(option.id),
+                  allowsDeletingActive: true,
+                  deleteAction: {
+                    pendingModelDeletion = ModelDeletion(
+                      id: option.id,
+                      name: option.name,
+                      kind: .refine
+                    )
+                  }
+                ) {
+                  model.selectRefineModel(option.id)
+                }
               }
-            ) {
-              model.selectRefineModel(option.id)
             }
+          }
+          .scrollIndicators(.visible)
+          .frame(maxHeight: 180)
+          .padding(8)
+          .background(.background)
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+          .overlay {
+            RoundedRectangle(cornerRadius: 8)
+              .stroke(.separator, lineWidth: 1)
           }
         }
         Toggle(
@@ -172,7 +265,14 @@ private struct SettingsView: View {
           isOn: Binding(
             get: { settings.refineEnabled },
             set: { model.setRefineEnabled($0) }
-          ))
+          )
+        )
+        .disabled(!model.canEnableRefine)
+        if !model.canEnableRefine {
+          Text("Download and activate a Refine model to enable this option.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
       }
 
       Section("Refine prompt") {
@@ -275,6 +375,7 @@ private struct ModelRow: View {
   let name: String
   let detail: String
   let status: ModelStatus
+  var allowsDeletingActive = false
   let deleteAction: () -> Void
   let action: () -> Void
 
@@ -300,7 +401,7 @@ private struct ModelRow: View {
       .buttonStyle(.plain)
       .disabled(status == .active || status == .downloading || status == .activating)
 
-      if status == .downloaded {
+      if status == .downloaded || (allowsDeletingActive && status == .active) {
         Button(action: deleteAction) {
           Image(systemName: "trash")
             .foregroundStyle(.secondary)

@@ -82,6 +82,9 @@ func shortcutDefaultsPreservePushToTalkBehavior() {
   let settings = AppSettings(defaults: defaults)
   #expect(settings.hotkeyShortcut == .rightOption)
   #expect(settings.hotkeyMode == .hold)
+  #expect(!settings.hasCompletedInitialSetup)
+  settings.hasCompletedInitialSetup = true
+  #expect(settings.hasCompletedInitialSetup)
 }
 
 @Test

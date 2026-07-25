@@ -20,6 +20,8 @@ final class AppModel: ObservableObject {
   @Published private(set) var activeRefineModel: String?
   @Published private(set) var loadingModel: String?
   @Published private(set) var isRecordingShortcut = false
+  @Published private(set) var needsModelSetup = false
+  @Published private(set) var isInitialModelSetup = false
   @Published private var downloadedASRModels = Set(
     ModelCatalog.asrModels.lazy.map(\.id).filter(NativeASREngine.isDownloaded)
   )
@@ -28,6 +30,14 @@ final class AppModel: ObservableObject {
   )
 
   let settings = AppSettings()
+
+  var canEnableRefine: Bool {
+    activeRefineModel != nil
+  }
+
+  var canEnableApp: Bool {
+    activeASRModel != nil
+  }
 
   private let asr = NativeASREngine()
   private let refiner = NativeRefineEngine()
@@ -48,7 +58,19 @@ final class AppModel: ObservableObject {
     refreshPermissions()
     do {
       try hotkey.start()
-      reloadModels()
+      if NativeASREngine.isDownloaded(modelID: settings.asrModel) {
+        if !settings.hasCompletedInitialSetup {
+          settings.hasCompletedInitialSetup = true
+        }
+        if settings.refineEnabled,
+          !NativeRefineEngine.isDownloaded(modelID: settings.refineModel)
+        {
+          settings.refineEnabled = false
+        }
+        reloadModels()
+      } else {
+        requestModelSetup()
+      }
     } catch {
       showError(error)
     }
@@ -74,39 +96,90 @@ final class AppModel: ObservableObject {
     }
   }
 
+  func installSelectedModels(asrID: String, includeRefine: Bool, refineID: String) {
+    needsModelSetup = false
+    settings.hasCompletedInitialSetup = true
+    runModelOperation { [self] in
+      do {
+        try await loadASR(asrID)
+        settings.asrModel = asrID
+        settings.refineEnabled = includeRefine
+        if includeRefine {
+          try await loadRefiner(refineID)
+          settings.refineModel = refineID
+        }
+      } catch {
+        if activeRefineModel == nil {
+          settings.refineEnabled = false
+        }
+        if !NativeASREngine.isDownloaded(modelID: settings.asrModel) {
+          requestModelSetup()
+        }
+        throw error
+      }
+    }
+  }
+
   func deleteASRModel(_ id: String) {
-    guard asrModelStatus(id) == .downloaded else { return }
-    do {
-      try NativeASREngine.deleteDownloadedModel(modelID: id)
-      downloadedASRModels.remove(id)
-    } catch {
-      showError(error)
+    let status = asrModelStatus(id)
+    guard status == .downloaded || status == .active else { return }
+    if status == .active {
+      modelTask?.cancel()
+      settings.enabled = false
+      activeASRModel = nil
+      loadingModel = nil
+      transition(to: .disabled)
+    }
+    Task {
+      if status == .active {
+        asr.unload()
+      }
+      do {
+        try NativeASREngine.deleteDownloadedModel(modelID: id)
+        downloadedASRModels.remove(id)
+      } catch {
+        showError(error)
+      }
     }
   }
 
   func deleteRefineModel(_ id: String) {
-    guard refineModelStatus(id) == .downloaded else { return }
-    do {
-      try NativeRefineEngine.deleteDownloadedModel(modelID: id)
-      downloadedRefineModels.remove(id)
-    } catch {
-      showError(error)
+    let status = refineModelStatus(id)
+    guard status == .downloaded || status == .active else { return }
+    if status == .active {
+      modelTask?.cancel()
+      settings.refineEnabled = false
+      activeRefineModel = nil
+      loadingModel = nil
+      transition(to: settings.enabled ? .idle : .disabled)
+    }
+    Task {
+      if status == .active {
+        await refiner.unload()
+      }
+      do {
+        try NativeRefineEngine.deleteDownloadedModel(modelID: id)
+        downloadedRefineModels.remove(id)
+        if downloadedRefineModels.isEmpty {
+          settings.refineEnabled = false
+        }
+      } catch {
+        showError(error)
+      }
     }
   }
 
   func setRefineEnabled(_ enabled: Bool) {
     guard !state.isDictating else { return }
     if enabled {
-      runModelOperation { [self] in
-        try await loadRefiner(settings.refineModel)
-        settings.refineEnabled = true
+      guard canEnableRefine else {
+        settings.refineEnabled = false
+        return
       }
+      settings.refineEnabled = true
+      transition(to: settings.enabled ? .idle : .disabled)
     } else {
-      modelTask?.cancel()
       settings.refineEnabled = false
-      activeRefineModel = nil
-      loadingModel = nil
-      Task { await refiner.unload() }
       transition(to: settings.enabled ? .idle : .disabled)
     }
   }
@@ -146,6 +219,10 @@ final class AppModel: ObservableObject {
   }
 
   func setEnabled(_ enabled: Bool) {
+    guard !enabled || canEnableApp else {
+      settings.enabled = false
+      return
+    }
     settings.enabled = enabled
     if !enabled, state == .listening {
       asr.stopRecording()
@@ -175,6 +252,12 @@ final class AppModel: ObservableObject {
     if settings.refineEnabled {
       try await loadRefiner(settings.refineModel)
     }
+  }
+
+  private func requestModelSetup() {
+    isInitialModelSetup = !settings.hasCompletedInitialSetup
+    needsModelSetup = true
+    transition(to: .disabled)
   }
 
   private func loadASR(_ id: String) async throws {

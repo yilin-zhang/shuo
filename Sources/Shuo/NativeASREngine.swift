@@ -33,6 +33,12 @@ final class NativeASREngine {
     try FileManager.default.removeItem(at: directory)
   }
 
+  func unload() {
+    stopRecording()
+    whisper = nil
+    loadedModelID = nil
+  }
+
   private nonisolated static func modelDirectory(modelID: String) -> URL {
     FileManager.default.homeDirectoryForCurrentUser
       .appending(path: "Documents/huggingface/models/argmaxinc/whisperkit-coreml")

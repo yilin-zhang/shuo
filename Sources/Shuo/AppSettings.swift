@@ -107,6 +107,7 @@ final class AppSettings: ObservableObject {
     static let refinePrompt = "refinePrompt"
     static let hotkeyKey = "hotkeyKey"
     static let hotkeyMode = "hotkeyMode"
+    static let completedInitialSetup = "completedInitialSetup"
   }
 
   @Published var enabled: Bool {
@@ -141,6 +142,11 @@ final class AppSettings: ObservableObject {
 
   @Published var hotkeyMode: HotkeyMode {
     didSet { defaults.set(hotkeyMode.rawValue, forKey: Key.hotkeyMode) }
+  }
+
+  var hasCompletedInitialSetup: Bool {
+    get { defaults.bool(forKey: Key.completedInitialSetup) }
+    set { defaults.set(newValue, forKey: Key.completedInitialSetup) }
   }
 
   private let defaults: UserDefaults
