@@ -1,4 +1,8 @@
-# Shuo
+<p align="center">
+  <img src="Resources/ShuoIcon.png" width="128" alt="Shuo icon">
+</p>
+
+# Shuo 說
 
 [![CI](https://github.com/yilin-zhang/shuo/actions/workflows/ci.yml/badge.svg)](https://github.com/yilin-zhang/shuo/actions/workflows/ci.yml)
 
