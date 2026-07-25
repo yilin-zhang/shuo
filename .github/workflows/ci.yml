@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check formatting
+        run: xcrun swift-format lint --strict --recursive Sources Tests
+
+      - name: Run tests
+        run: xcrun swift test --disable-sandbox
+
+      - name: Build app
+        if: github.event_name != 'pull_request'
+        run: bash scripts/build-app.sh
+
+      - name: Package app
+        if: github.event_name != 'pull_request'
+        run: ditto -c -k --sequesterRsrc --keepParent dist/Shuo.app dist/Shuo.app.zip
+
+      - name: Upload app
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shuo-${{ github.sha }}
+          path: dist/Shuo.app.zip
+          if-no-files-found: error
+          retention-days: 14

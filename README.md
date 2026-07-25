@@ -1,5 +1,7 @@
 # Shuo
 
+[![CI](https://github.com/yilin-zhang/shuo/actions/workflows/ci.yml/badge.svg)](https://github.com/yilin-zhang/shuo/actions/workflows/ci.yml)
+
 A private, native macOS push-to-talk dictation app. Hold the right Option key,
 speak, and release to type the local transcription into the focused app.
 
@@ -31,6 +33,15 @@ SHUO_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
 
 The first launch downloads the selected local models and asks for Microphone,
 Accessibility, and Input Monitoring permission.
+
+## Continuous integration
+
+GitHub Actions checks formatting and runs the test suite for every pull request
+and every push to `main`. Pushes to `main` also produce an ad-hoc signed
+`Shuo.app.zip` artifact on the workflow run.
+
+The artifact is intended for development testing. Public distribution still
+requires Developer ID signing and Apple notarization.
 
 ## License
 
