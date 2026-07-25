@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class OverlayController {
   private let panel: NSPanel
+  private var transientTask: Task<Void, Never>?
 
   init() {
     panel = NSPanel(
@@ -21,6 +22,7 @@ final class OverlayController {
   }
 
   func update(_ state: ShuoState) {
+    transientTask?.cancel()
     guard state.showsOverlay else {
       panel.orderOut(nil)
       return
@@ -30,12 +32,52 @@ final class OverlayController {
     panel.orderFrontRegardless()
   }
 
+  func showRefineOutcome(_ outcome: RefineOutcome) {
+    transientTask?.cancel()
+    panel.contentView = NSHostingView(rootView: RefineOutcomeBubble(outcome: outcome))
+    position()
+    panel.orderFrontRegardless()
+    transientTask = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(1.2))
+      guard !Task.isCancelled else { return }
+      self?.panel.orderOut(nil)
+    }
+  }
+
   private func position() {
     let screen = NSScreen.main ?? NSScreen.screens.first
     guard let frame = screen?.visibleFrame else { return }
     panel.setFrameOrigin(
       NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.minY + 72)
     )
+  }
+}
+
+private struct RefineOutcomeBubble: View {
+  let outcome: RefineOutcome
+
+  var body: some View {
+    HStack(spacing: 11) {
+      Image(systemName: outcome.symbol)
+        .font(.system(size: 19, weight: .semibold))
+        .foregroundStyle(color)
+      Text(outcome.label)
+        .font(.system(size: 14, weight: .medium))
+        .lineLimit(1)
+    }
+    .padding(.horizontal, 18)
+    .frame(width: 210, height: 52)
+    .background(.regularMaterial, in: Capsule())
+    .overlay(Capsule().stroke(.white.opacity(0.15)))
+    .padding(3)
+  }
+
+  private var color: Color {
+    switch outcome {
+    case .applied: .green
+    case .unchanged: .secondary
+    case .rejected: .orange
+    }
   }
 }
 

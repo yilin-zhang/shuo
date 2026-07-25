@@ -10,6 +10,8 @@ func modelCatalogHasValidDefaults() {
   #expect(ModelCatalog.refineModels.first?.id == "mlx-community/Qwen3-0.6B-4bit")
   #expect(!AppSettings.defaultRefinePrompt.isEmpty)
   #expect(AppSettings.defaultRefinePrompt.contains("not a conversational assistant"))
+  #expect(AppSettings.defaultRefinePrompt.contains("natural punctuation"))
+  #expect(AppSettings.defaultRefinePrompt.contains("misspelled English words"))
   #expect(!AppSettings.defaultRefinePrompt.contains("<corrected>"))
   #expect(
     NativeRefineEngine.instructions(userPrompt: "Apply placeholder preferences.")
@@ -51,6 +53,24 @@ func refineOutputRemovesCorrectionTags() {
       fallback: "placeholder txt"
     ) == "placeholder text"
   )
+  #expect(
+    NativeRefineEngine.result(
+      from: "<corrected>placeholder text</corrected>",
+      fallback: "placeholder txt"
+    ).outcome == .applied
+  )
+  #expect(
+    NativeRefineEngine.result(
+      from: "<corrected>placeholder text</corrected>",
+      fallback: "placeholder text"
+    ).outcome == .unchanged
+  )
+  #expect(
+    NativeRefineEngine.result(
+      from: "placeholder text",
+      fallback: "placeholder text"
+    ).outcome == .rejected
+  )
 }
 
 @Test
@@ -71,6 +91,20 @@ func legacyDefaultRefinePromptMigratesToUserFacingInstructions() {
   let defaults = UserDefaults(suiteName: suite)!
   defer { defaults.removePersistentDomain(forName: suite) }
   defaults.set(AppSettings.legacyDefaultRefinePrompt, forKey: "refinePrompt")
+
+  let settings = AppSettings(defaults: defaults)
+
+  #expect(settings.refinePrompt == AppSettings.defaultRefinePrompt)
+  #expect(defaults.string(forKey: "refinePrompt") == AppSettings.defaultRefinePrompt)
+}
+
+@Test
+@MainActor
+func conservativeDefaultRefinePromptMigratesToImprovedInstructions() {
+  let suite = "ShuoTests.ConservativeRefinePrompt.\(UUID().uuidString)"
+  let defaults = UserDefaults(suiteName: suite)!
+  defer { defaults.removePersistentDomain(forName: suite) }
+  defaults.set(AppSettings.conservativeDefaultRefinePrompt, forKey: "refinePrompt")
 
   let settings = AppSettings(defaults: defaults)
 

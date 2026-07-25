@@ -1,5 +1,27 @@
 import Foundation
 
+enum RefineOutcome: Equatable {
+  case applied
+  case unchanged
+  case rejected
+
+  var label: String {
+    switch self {
+    case .applied: "Refine applied"
+    case .unchanged: "No changes"
+    case .rejected: "Refine skipped"
+    }
+  }
+
+  var symbol: String {
+    switch self {
+    case .applied: "checkmark.circle.fill"
+    case .unchanged: "equal.circle"
+    case .rejected: "exclamationmark.triangle.fill"
+    }
+  }
+}
+
 enum ShuoState: Equatable {
   case disabled
   case loading(String)

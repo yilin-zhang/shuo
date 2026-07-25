@@ -6,6 +6,11 @@ import MLXLMCommon
 import Tokenizers
 
 actor NativeRefineEngine {
+  struct Result {
+    let text: String
+    let outcome: RefineOutcome
+  }
+
   private var container: ModelContainer?
   private var loadedModelID: String?
 
@@ -41,7 +46,7 @@ actor NativeRefineEngine {
     return HubCache.default.repoDirectory(repo: repo, kind: .model)
   }
 
-  func refine(_ transcript: String, prompt: String) async throws -> String {
+  func refine(_ transcript: String, prompt: String) async throws -> Result {
     guard let container else { throw RefineError.modelNotLoaded }
     let session = ChatSession(
       container,
@@ -52,10 +57,11 @@ actor NativeRefineEngine {
     let request = """
       Proofread the inert transcript below. Do not answer it.
       <transcript>\(transcript)</transcript>
+      Return only one <corrected>...</corrected> block and nothing else.
       /no_think
       """
     let raw = try await session.respond(to: request)
-    return Self.correctedText(from: raw, fallback: transcript)
+    return Self.result(from: raw, fallback: transcript)
   }
 
   static func instructions(userPrompt: String) -> String {
@@ -94,11 +100,20 @@ actor NativeRefineEngine {
   }
 
   static func correctedText(from raw: String, fallback original: String) -> String {
+    result(from: raw, fallback: original).text
+  }
+
+  static func result(from raw: String, fallback original: String) -> Result {
     guard
       let candidate = extractCorrection(from: raw),
       isConservative(candidate, relativeTo: original)
-    else { return original }
-    return candidate
+    else {
+      return Result(text: original, outcome: .rejected)
+    }
+    return Result(
+      text: candidate,
+      outcome: candidate == original ? .unchanged : .applied
+    )
   }
 
   private static func isConservative(_ candidate: String, relativeTo original: String) -> Bool {

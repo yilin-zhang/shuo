@@ -260,13 +260,19 @@ final class AppModel: ObservableObject {
     do {
       transition(to: .transcribing)
       var text = try await asr.transcribe(audio)
+      var refineOutcome: RefineOutcome?
       if settings.refineEnabled {
         transition(to: .refining)
-        text = try await refiner.refine(text, prompt: settings.refinePrompt)
+        let result = try await refiner.refine(text, prompt: settings.refinePrompt)
+        text = result.text
+        refineOutcome = result.outcome
       }
       transition(to: .outputting)
       try TextInjector.type(text)
       transition(to: settings.enabled ? .idle : .disabled)
+      if let refineOutcome {
+        overlay.showRefineOutcome(refineOutcome)
+      }
     } catch {
       showError(error)
     }
