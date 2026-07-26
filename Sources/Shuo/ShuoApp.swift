@@ -82,8 +82,12 @@ private struct ModelSetupView: View {
       }
 
       Picker(L10n.string("setup.asr"), selection: $asrID) {
-        ForEach(ModelCatalog.asrModels) { option in
-          Text(option.name).tag(option.id)
+        ForEach(ModelCatalog.asrGroups) { group in
+          Section(group.title ?? "") {
+            ForEach(group.options) { option in
+              Text(option.name).tag(option.id)
+            }
+          }
         }
       }
       .disabled(model.isManagingModels)
@@ -227,7 +231,7 @@ private struct SettingsView: View {
       Section(L10n.string("settings.models")) {
         ModelList(
           title: L10n.string("settings.transcription"),
-          options: ModelCatalog.asrModels,
+          groups: ModelCatalog.asrGroups,
           interactionsDisabled: model.isManagingModels,
           status: model.asrModelStatus,
           progress: { model.modelDownloadProgress(kind: .transcription, id: $0) }
@@ -242,7 +246,7 @@ private struct SettingsView: View {
         }
         ModelList(
           title: L10n.string("settings.refine"),
-          options: ModelCatalog.refineModels,
+          groups: ModelCatalog.refineGroups,
           interactionsDisabled: model.isManagingModels,
           status: model.refineModelStatus,
           progress: { model.modelDownloadProgress(kind: .refine, id: $0) }
@@ -265,6 +269,15 @@ private struct SettingsView: View {
         .disabled(!model.canEnableRefine || model.isManagingModels)
         if !model.canEnableRefine {
           Text(L10n.string("settings.refineUnavailable"))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      if ASRBackend.resolve(modelID: settings.asrModel) == .qwen3 {
+        Section(L10n.string("settings.transcriptionTerms")) {
+          TerminologyEditor(terms: $settings.transcriptionTerms)
+          Text(L10n.string("settings.transcriptionTermsHelp"))
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -348,7 +361,10 @@ private struct SettingsView: View {
     }
     .formStyle(.grouped)
     .padding()
-    .frame(width: 560, height: 560)
+    .frame(
+      width: 560,
+      height: ASRBackend.resolve(modelID: settings.asrModel) == .qwen3 ? 680 : 560
+    )
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
     {
       _ in
@@ -380,9 +396,57 @@ private struct SettingsView: View {
   }
 }
 
+private struct TerminologyEditor: View {
+  @Binding var terms: [String]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      if !terms.isEmpty {
+        ScrollView {
+          LazyVStack(spacing: 6) {
+            ForEach(terms.indices, id: \.self) { index in
+              HStack {
+                TextField("", text: binding(for: index))
+                  .textFieldStyle(.roundedBorder)
+                Button {
+                  terms.remove(at: index)
+                } label: {
+                  Image(systemName: "minus.circle.fill")
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(L10n.string("settings.removeTranscriptionTerm"))
+              }
+            }
+          }
+        }
+        .scrollIndicators(.visible)
+        .frame(maxHeight: 132)
+      }
+
+      Button {
+        terms.append("")
+      } label: {
+        Label(
+          L10n.string("settings.addTranscriptionTerm"),
+          systemImage: "plus"
+        )
+      }
+      .disabled(terms.last?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true)
+    }
+  }
+
+  private func binding(for index: Int) -> Binding<String> {
+    Binding(
+      get: { terms.indices.contains(index) ? terms[index] : "" },
+      set: { if terms.indices.contains(index) { terms[index] = $0 } }
+    )
+  }
+}
+
 private struct ModelList: View {
   let title: String
-  let options: [ModelOption]
+  let groups: [ModelGroup]
   let interactionsDisabled: Bool
   let status: (String) -> ModelStatus
   let progress: (String) -> Double?
@@ -392,31 +456,40 @@ private struct ModelList: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(title).font(.headline)
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: 8) {
-          ForEach(options) { option in
-            ModelRow(
-              name: option.name,
-              detail: option.detail,
-              state: ModelRowState(
-                status: status(option.id),
-                downloadProgress: progress(option.id),
-                interactionsDisabled: interactionsDisabled
-              ),
-              deleteAction: { delete(option) },
-              action: { select(option) }
-            )
+      ForEach(groups) { group in
+        VStack(alignment: .leading, spacing: 6) {
+          if let groupTitle = group.title {
+            Text(groupTitle)
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
+          }
+          ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+              ForEach(group.options) { option in
+                ModelRow(
+                  name: option.name,
+                  detail: option.detail,
+                  state: ModelRowState(
+                    status: status(option.id),
+                    downloadProgress: progress(option.id),
+                    interactionsDisabled: interactionsDisabled
+                  ),
+                  deleteAction: { delete(option) },
+                  action: { select(option) }
+                )
+              }
+            }
+          }
+          .scrollIndicators(.visible)
+          .frame(maxHeight: group.options.count > 3 ? 132 : nil)
+          .padding(8)
+          .background(.background)
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+          .overlay {
+            RoundedRectangle(cornerRadius: 8)
+              .stroke(.separator, lineWidth: 1)
           }
         }
-      }
-      .scrollIndicators(.visible)
-      .frame(maxHeight: 180)
-      .padding(8)
-      .background(.background)
-      .clipShape(RoundedRectangle(cornerRadius: 8))
-      .overlay {
-        RoundedRectangle(cornerRadius: 8)
-          .stroke(.separator, lineWidth: 1)
       }
     }
   }
@@ -461,9 +534,11 @@ private struct ModelRow: View {
             .frame(width: 18)
           VStack(alignment: .leading, spacing: 2) {
             Text(name)
-            Text(detail)
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            if !detail.isEmpty {
+              Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
           }
           Spacer()
           Text(statusLabel)

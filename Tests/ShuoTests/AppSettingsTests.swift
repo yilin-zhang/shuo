@@ -55,3 +55,32 @@ func conservativeRefinePromptMigratesToCurrentDefault() {
     #expect(defaults.string(forKey: refinePromptKey) == AppSettings.defaultRefinePrompt)
   }
 }
+
+@Test
+@MainActor
+func transcriptionTermsBecomeDeduplicatedModelContext() {
+  withIsolatedDefaults("TranscriptionTerms") { defaults in
+    let settings = AppSettings(defaults: defaults)
+    settings.transcriptionTerms = [
+      "ExampleFramework",
+      "",
+      "Sample API",
+      "exampleframework",
+    ]
+
+    #expect(settings.transcriptionContext == "ExampleFramework Sample API")
+  }
+}
+
+@Test
+@MainActor
+func legacyMultilineTerminologyMigratesToRows() {
+  withIsolatedDefaults("LegacyTranscriptionTerms") { defaults in
+    defaults.set("ExampleFramework\nSample API", forKey: "transcriptionTerms")
+
+    let settings = AppSettings(defaults: defaults)
+
+    #expect(settings.transcriptionTerms == ["ExampleFramework", "Sample API"])
+    #expect(defaults.stringArray(forKey: "transcriptionTerms") == settings.transcriptionTerms)
+  }
+}

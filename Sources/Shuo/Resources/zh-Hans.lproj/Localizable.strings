@@ -41,6 +41,10 @@
 "settings.refineEvery" = "每次转写后润色";
 "settings.refineUnavailable" = "请先下载并激活一个润色模型。";
 "settings.refinePrompt" = "润色提示词";
+"settings.transcriptionTerms" = "转写术语";
+"settings.transcriptionTermsHelp" = "每行输入一个术语。Qwen 会在解码时参考这些术语，可改善专业词汇识别，但也可能过度纠正发音相近的词。";
+"settings.addTranscriptionTerm" = "添加术语";
+"settings.removeTranscriptionTerm" = "删除术语";
 "settings.shortcut" = "快捷键";
 "settings.key" = "按键";
 "settings.pressShortcut" = "请按快捷键…";

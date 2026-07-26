@@ -22,8 +22,14 @@ struct ModelOption: Identifiable, Hashable {
   let detail: String
 }
 
+struct ModelGroup: Identifiable {
+  let id: String
+  let title: String?
+  let options: [ModelOption]
+}
+
 enum ModelCatalog {
-  static let asrModels: [ModelOption] = {
+  static let asrGroups: [ModelGroup] = {
     let preferred = "large-v3-v20240930_turbo_632MB"
     let supported = WhisperKit.recommendedModels().supported.map {
       $0.replacingOccurrences(of: "openai_whisper-", with: "")
@@ -33,10 +39,29 @@ enum ModelCatalog {
       if $1 == preferred { return false }
       return $0.localizedStandardCompare($1) == .orderedAscending
     }
-    return ids.map {
-      ModelOption(id: $0, name: displayName(for: $0), detail: "WhisperKit")
-    }
+    return [
+      ModelGroup(
+        id: "whisperkit",
+        title: "WhisperKit",
+        options: ids.map {
+          ModelOption(id: $0, name: displayName(for: $0), detail: "")
+        }
+      ),
+      ModelGroup(
+        id: "qwen3-asr",
+        title: "Qwen3-ASR",
+        options: [
+          ModelOption(
+            id: ASRBackend.qwenModelID,
+            name: "Qwen3-ASR 0.6B 4-bit",
+            detail: ""
+          )
+        ]
+      ),
+    ]
   }()
+
+  static let asrModels = asrGroups.flatMap(\.options)
 
   static let refineModels = [
     ModelOption(
@@ -59,6 +84,10 @@ enum ModelCatalog {
       name: "Qwen3 8B 4-bit",
       detail: L10n.string("model.highest")
     ),
+  ]
+
+  static let refineGroups = [
+    ModelGroup(id: "refine", title: nil, options: refineModels)
   ]
 
   private static func displayName(for id: String) -> String {
@@ -105,6 +134,7 @@ final class AppSettings: ObservableObject {
     static let asrModel = "asrModel"
     static let refineModel = "refineModel"
     static let refinePrompt = "refinePrompt"
+    static let transcriptionTerms = "transcriptionTerms"
     static let hotkeyKey = "hotkeyKey"
     static let hotkeyMode = "hotkeyMode"
     static let completedInitialSetup = "completedInitialSetup"
@@ -134,6 +164,19 @@ final class AppSettings: ObservableObject {
     didSet { defaults.set(refinePrompt, forKey: Key.refinePrompt) }
   }
 
+  @Published var transcriptionTerms: [String] {
+    didSet { defaults.set(transcriptionTerms, forKey: Key.transcriptionTerms) }
+  }
+
+  var transcriptionContext: String {
+    var seen = Set<String>()
+    return
+      transcriptionTerms
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty && seen.insert($0.localizedLowercase).inserted }
+      .joined(separator: " ")
+  }
+
   @Published var hotkeyShortcut: HotkeyShortcut {
     didSet {
       defaults.set(try? JSONEncoder().encode(hotkeyShortcut), forKey: Key.hotkeyKey)
@@ -160,6 +203,7 @@ final class AppSettings: ObservableObject {
       Key.asrModel: ModelCatalog.asrModels[0].id,
       Key.refineModel: ModelCatalog.refineModels[0].id,
       Key.refinePrompt: Self.defaultRefinePrompt,
+      Key.transcriptionTerms: [String](),
       Key.hotkeyMode: HotkeyMode.hold.rawValue,
     ])
     enabled = defaults.bool(forKey: Key.enabled)
@@ -178,6 +222,16 @@ final class AppSettings: ObservableObject {
       ? Self.defaultRefinePrompt
       : storedRefinePrompt
     refinePrompt = migratedRefinePrompt
+    if let terms = defaults.stringArray(forKey: Key.transcriptionTerms) {
+      transcriptionTerms = terms
+    } else {
+      let migratedTerms =
+        defaults.string(forKey: Key.transcriptionTerms)?
+        .split(whereSeparator: \.isNewline)
+        .map(String.init) ?? []
+      transcriptionTerms = migratedTerms
+      defaults.set(migratedTerms, forKey: Key.transcriptionTerms)
+    }
     if usesObsoleteDefault {
       defaults.set(migratedRefinePrompt, forKey: Key.refinePrompt)
     }

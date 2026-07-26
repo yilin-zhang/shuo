@@ -185,7 +185,7 @@ final class AppModel: ObservableObject {
   }
 
   func deleteASRModel(_ id: String) {
-    guard !isManagingModels else { return }
+    guard !state.isDictating, !isManagingModels else { return }
     let status = asrModelStatus(id)
     guard status == .downloaded || status == .active else { return }
     if status == .active {
@@ -212,7 +212,7 @@ final class AppModel: ObservableObject {
   }
 
   func deleteRefineModel(_ id: String) {
-    guard !isManagingModels else { return }
+    guard !state.isDictating, !isManagingModels else { return }
     let status = refineModelStatus(id)
     guard status == .downloaded || status == .active else { return }
     if status == .active {
@@ -508,7 +508,10 @@ final class AppModel: ObservableObject {
   private func process(_ audio: [Float]) async {
     do {
       transition(to: .transcribing)
-      var text = try await asr.transcribe(audio)
+      var text = try await asr.transcribe(
+        audio,
+        context: settings.transcriptionContext
+      )
       var refineOutcome: RefineOutcome?
       if settings.refineEnabled {
         transition(to: .refining)

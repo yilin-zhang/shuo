@@ -110,7 +110,7 @@ func incompleteASRCacheIsNotDownloadable() throws {
   defer { try? FileManager.default.removeItem(at: directory) }
 
   try createFile("config.json", in: directory)
-  #expect(!NativeASREngine.isCompleteModelDirectory(directory))
+  #expect(!NativeASREngine.isCompleteWhisperModelDirectory(directory))
 
   for path in [
     "AudioEncoder.mlmodelc/coremldata.bin",
@@ -119,7 +119,20 @@ func incompleteASRCacheIsNotDownloadable() throws {
   ] {
     try createFile(path, in: directory)
   }
-  #expect(NativeASREngine.isCompleteModelDirectory(directory))
+  #expect(NativeASREngine.isCompleteWhisperModelDirectory(directory))
+}
+
+@Test
+func qwenCacheRequiresConfigTokenizerAndWeights() throws {
+  let directory = try temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+
+  try createFile("config.json", in: directory)
+  try createFile("tokenizer_config.json", in: directory)
+  #expect(!NativeASREngine.isCompleteQwenModelDirectory(directory))
+
+  try createFile("model.safetensors", contents: "placeholder", in: directory)
+  #expect(NativeASREngine.isCompleteQwenModelDirectory(directory))
 }
 
 @Test

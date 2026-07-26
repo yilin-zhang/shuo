@@ -41,6 +41,10 @@
 "settings.refineEvery" = "Refine every transcription";
 "settings.refineUnavailable" = "Download and activate a Refine model to enable this option.";
 "settings.refinePrompt" = "Refine prompt";
+"settings.transcriptionTerms" = "Transcription terminology";
+"settings.transcriptionTermsHelp" = "Enter one term per line. Qwen uses these terms while decoding, which can improve specialist vocabulary but may over-correct similar-sounding words.";
+"settings.addTranscriptionTerm" = "Add Term";
+"settings.removeTranscriptionTerm" = "Remove term";
 "settings.shortcut" = "Shortcut";
 "settings.key" = "Key";
 "settings.pressShortcut" = "Press shortcut…";

@@ -26,6 +26,10 @@ let package = Package(
             url: "https://github.com/huggingface/swift-huggingface.git",
             exact: "0.9.0"
         ),
+        .package(
+            url: "https://github.com/Blaizzy/mlx-audio-swift.git",
+            exact: "0.1.3"
+        ),
     ],
     targets: [
         .executableTarget(
@@ -37,6 +41,8 @@ let package = Package(
                 .product(name: "MLXHuggingFace", package: "mlx-swift-lm"),
                 .product(name: "HuggingFace", package: "swift-huggingface"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
+                .product(name: "MLXAudioCore", package: "mlx-audio-swift"),
+                .product(name: "MLXAudioSTT", package: "mlx-audio-swift"),
             ],
             path: "Sources/Shuo",
             resources: [.process("Resources")]

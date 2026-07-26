@@ -41,6 +41,10 @@
 "settings.refineEvery" = "每次轉寫後潤飾";
 "settings.refineUnavailable" = "請先下載並啟用一個潤飾模型。";
 "settings.refinePrompt" = "潤飾提示詞";
+"settings.transcriptionTerms" = "轉寫術語";
+"settings.transcriptionTermsHelp" = "每行輸入一個術語。Qwen 會在解碼時參考這些術語，可改善專業詞彙辨識，但也可能過度修正發音相近的詞。";
+"settings.addTranscriptionTerm" = "新增術語";
+"settings.removeTranscriptionTerm" = "刪除術語";
 "settings.shortcut" = "快速鍵";
 "settings.key" = "按鍵";
 "settings.pressShortcut" = "請按快速鍵…";
