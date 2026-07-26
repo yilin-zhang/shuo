@@ -97,6 +97,18 @@ final class AppModel: ObservableObject {
       || !deletingRefineModels.isEmpty
   }
 
+  var modelInteractionsDisabled: Bool {
+    isManagingModels || state.isDictating
+  }
+
+  var appToggleDisabled: Bool {
+    isManagingModels || state.isProcessing
+  }
+
+  var shortcutConfigurationDisabled: Bool {
+    state.isDictating || isManagingModels
+  }
+
   private let asr = NativeASREngine()
   private let refiner = NativeRefineEngine()
   private let overlay = OverlayController()
@@ -125,6 +137,7 @@ final class AppModel: ObservableObject {
 
     await PermissionManager.requestAll()
     refreshPermissions()
+    refreshLaunchAtLogin()
     do {
       try hotkey.start()
       let plan = ModelStartupPlan.resolve(
@@ -243,17 +256,13 @@ final class AppModel: ObservableObject {
 
   func setRefineEnabled(_ enabled: Bool) {
     guard !state.isDictating, !isManagingModels else { return }
-    if enabled {
-      guard canEnableRefine else {
-        settings.refineEnabled = false
-        return
-      }
-      settings.refineEnabled = true
-      transition(to: settings.enabled ? .idle : .disabled)
-    } else {
+    guard settings.refineEnabled != enabled else { return }
+    guard !enabled || canEnableRefine else {
       settings.refineEnabled = false
-      transition(to: settings.enabled ? .idle : .disabled)
+      return
     }
+    settings.refineEnabled = enabled
+    transition(to: settings.enabled ? .idle : .disabled)
   }
 
   func asrModelStatus(_ id: String) -> ModelStatus {
@@ -285,22 +294,39 @@ final class AppModel: ObservableObject {
     return progress
   }
 
-  func applyLaunchAtLogin() {
+  func setLaunchAtLogin(_ enabled: Bool) {
+    guard settings.launchAtLogin != enabled else { return }
     do {
-      if settings.launchAtLogin {
+      if enabled {
         try SMAppService.mainApp.register()
       } else {
         try SMAppService.mainApp.unregister()
       }
+      refreshLaunchAtLogin()
     } catch {
+      refreshLaunchAtLogin()
       showError(error)
     }
   }
 
+  func refreshSystemState() {
+    refreshPermissions()
+    refreshLaunchAtLogin()
+  }
+
   func refreshPermissions() {
-    microphoneGranted = PermissionManager.microphoneGranted
-    accessibilityGranted = PermissionManager.accessibilityGranted
-    inputMonitoringGranted = PermissionManager.inputMonitoringGranted
+    let microphoneGranted = PermissionManager.microphoneGranted
+    let accessibilityGranted = PermissionManager.accessibilityGranted
+    let inputMonitoringGranted = PermissionManager.inputMonitoringGranted
+    if self.microphoneGranted != microphoneGranted {
+      self.microphoneGranted = microphoneGranted
+    }
+    if self.accessibilityGranted != accessibilityGranted {
+      self.accessibilityGranted = accessibilityGranted
+    }
+    if self.inputMonitoringGranted != inputMonitoringGranted {
+      self.inputMonitoringGranted = inputMonitoringGranted
+    }
   }
 
   func openPermissionSettings(_ permission: PermissionKind) {
@@ -308,7 +334,8 @@ final class AppModel: ObservableObject {
   }
 
   func setEnabled(_ enabled: Bool) {
-    guard !isManagingModels else { return }
+    guard !appToggleDisabled else { return }
+    guard settings.enabled != enabled else { return }
     guard !enabled || canEnableApp else {
       settings.enabled = false
       return
@@ -542,13 +569,32 @@ final class AppModel: ObservableObject {
   }
 
   private func transition(to newState: ShuoState) {
+    guard state != newState else { return }
     state = newState
     overlay.update(newState)
+  }
+
+  private func refreshLaunchAtLogin() {
+    let enabled = Self.launchAtLoginEnabled(for: SMAppService.mainApp.status)
+    if settings.launchAtLogin != enabled {
+      settings.launchAtLogin = enabled
+    }
+  }
+
+  nonisolated static func launchAtLoginEnabled(for status: SMAppService.Status) -> Bool {
+    switch status {
+    case .enabled, .requiresApproval:
+      true
+    case .notRegistered, .notFound:
+      false
+    @unknown default:
+      false
+    }
   }
 }
 
 extension ShuoState {
-  fileprivate var isBusy: Bool {
+  var isBusy: Bool {
     switch self {
     case .listening, .transcribing, .refining, .outputting, .loading:
       true
@@ -557,9 +603,18 @@ extension ShuoState {
     }
   }
 
-  fileprivate var isDictating: Bool {
+  var isDictating: Bool {
     switch self {
     case .listening, .transcribing, .refining, .outputting:
+      true
+    default:
+      false
+    }
+  }
+
+  var isProcessing: Bool {
+    switch self {
+    case .transcribing, .refining, .outputting:
       true
     default:
       false

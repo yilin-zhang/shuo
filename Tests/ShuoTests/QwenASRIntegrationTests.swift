@@ -4,15 +4,16 @@ import Testing
 
 @testable import Shuo
 
-@Test
+private let qwenIntegrationEnabled =
+  ProcessInfo.processInfo.environment["SHUO_RUN_QWEN_INTEGRATION"] == "1"
+
+@Test(.enabled(if: qwenIntegrationEnabled))
 @MainActor
 func qwenTranscribesWithModelContextWhenIntegrationFixtureIsAvailable() async throws {
   let environment = ProcessInfo.processInfo.environment
-  guard environment["SHUO_RUN_QWEN_INTEGRATION"] == "1",
-    let audioPath = environment["SHUO_QWEN_AUDIO_FIXTURE"],
-    let terminology = environment["SHUO_QWEN_TERMINOLOGY"],
-    let expectedText = environment["SHUO_QWEN_EXPECTED_TEXT"]
-  else { return }
+  let audioPath = try #require(environment["SHUO_QWEN_AUDIO_FIXTURE"])
+  let terminology = try #require(environment["SHUO_QWEN_TERMINOLOGY"])
+  let expectedText = try #require(environment["SHUO_QWEN_EXPECTED_TEXT"])
 
   let engine = NativeASREngine()
   try await engine.load(modelID: ASRBackend.qwenModelID)
@@ -37,14 +38,16 @@ private func loadMonoFloatAudio(_ url: URL) throws -> [Float] {
     throw QwenIntegrationFixtureError.requires16kMono
   }
   let frameCount = AVAudioFrameCount(file.length)
-  let buffer = AVAudioPCMBuffer(
-    pcmFormat: file.processingFormat,
-    frameCapacity: frameCount
-  )!
+  let buffer = try #require(
+    AVAudioPCMBuffer(
+      pcmFormat: file.processingFormat,
+      frameCapacity: frameCount
+    ))
   try file.read(into: buffer)
+  let channelData = try #require(buffer.floatChannelData)
   return Array(
     UnsafeBufferPointer(
-      start: buffer.floatChannelData![0],
+      start: channelData[0],
       count: Int(buffer.frameLength)
     )
   )

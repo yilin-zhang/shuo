@@ -3,8 +3,6 @@ import Testing
 
 @testable import Shuo
 
-private let refinePromptKey = "refinePrompt"
-
 @MainActor
 private func withIsolatedDefaults(
   _ label: String,
@@ -24,6 +22,8 @@ func settingsPreservePushToTalkAndSetupDefaults() {
 
     #expect(settings.hotkeyShortcut == .rightOption)
     #expect(settings.hotkeyMode == .hold)
+    #expect(settings.asrModel == ASRBackend.qwenModelID)
+    #expect(settings.refineModel == ModelCatalog.defaultRefineModelID)
     #expect(!settings.hasCompletedInitialSetup)
     settings.hasCompletedInitialSetup = true
     #expect(settings.hasCompletedInitialSetup)
@@ -32,27 +32,15 @@ func settingsPreservePushToTalkAndSetupDefaults() {
 
 @Test
 @MainActor
-func legacyRefinePromptMigratesToCurrentDefault() {
-  withIsolatedDefaults("LegacyPrompt") { defaults in
-    defaults.set(AppSettings.legacyDefaultRefinePrompt, forKey: refinePromptKey)
+func newDefaultsDoNotOverwriteExistingModelChoices() {
+  withIsolatedDefaults("ExistingModels") { defaults in
+    defaults.set("placeholder-asr-model", forKey: "asrModel")
+    defaults.set("placeholder-refine-model", forKey: "refineModel")
 
     let settings = AppSettings(defaults: defaults)
 
-    #expect(settings.refinePrompt == AppSettings.defaultRefinePrompt)
-    #expect(defaults.string(forKey: refinePromptKey) == AppSettings.defaultRefinePrompt)
-  }
-}
-
-@Test
-@MainActor
-func conservativeRefinePromptMigratesToCurrentDefault() {
-  withIsolatedDefaults("ConservativePrompt") { defaults in
-    defaults.set(AppSettings.conservativeDefaultRefinePrompt, forKey: refinePromptKey)
-
-    let settings = AppSettings(defaults: defaults)
-
-    #expect(settings.refinePrompt == AppSettings.defaultRefinePrompt)
-    #expect(defaults.string(forKey: refinePromptKey) == AppSettings.defaultRefinePrompt)
+    #expect(settings.asrModel == "placeholder-asr-model")
+    #expect(settings.refineModel == "placeholder-refine-model")
   }
 }
 

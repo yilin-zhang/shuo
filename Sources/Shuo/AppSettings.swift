@@ -29,6 +29,8 @@ struct ModelGroup: Identifiable {
 }
 
 enum ModelCatalog {
+  static let defaultRefineModelID = "mlx-community/Qwen3-0.6B-4bit"
+
   static let asrGroups: [ModelGroup] = {
     let preferred = "large-v3-v20240930_turbo_632MB"
     let supported = WhisperKit.recommendedModels().supported.map {
@@ -41,13 +43,6 @@ enum ModelCatalog {
     }
     return [
       ModelGroup(
-        id: "whisperkit",
-        title: "WhisperKit",
-        options: ids.map {
-          ModelOption(id: $0, name: displayName(for: $0), detail: "")
-        }
-      ),
-      ModelGroup(
         id: "qwen3-asr",
         title: "Qwen3-ASR",
         options: [
@@ -58,6 +53,13 @@ enum ModelCatalog {
           )
         ]
       ),
+      ModelGroup(
+        id: "whisperkit",
+        title: "WhisperKit",
+        options: ids.map {
+          ModelOption(id: $0, name: displayName(for: $0), detail: "")
+        }
+      ),
     ]
   }()
 
@@ -65,7 +67,7 @@ enum ModelCatalog {
 
   static let refineModels = [
     ModelOption(
-      id: "mlx-community/Qwen3-0.6B-4bit",
+      id: defaultRefineModelID,
       name: "Qwen3 0.6B 4-bit",
       detail: L10n.string("model.fast")
     ),
@@ -201,7 +203,7 @@ final class AppSettings: ObservableObject {
       Key.refineEnabled: true,
       Key.launchAtLogin: false,
       Key.asrModel: ModelCatalog.asrModels[0].id,
-      Key.refineModel: ModelCatalog.refineModels[0].id,
+      Key.refineModel: ModelCatalog.defaultRefineModelID,
       Key.refinePrompt: Self.defaultRefinePrompt,
       Key.transcriptionTerms: [String](),
       Key.hotkeyMode: HotkeyMode.hold.rawValue,
@@ -211,7 +213,7 @@ final class AppSettings: ObservableObject {
     launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
     asrModel = defaults.string(forKey: Key.asrModel) ?? ModelCatalog.asrModels[0].id
     refineModel =
-      defaults.string(forKey: Key.refineModel) ?? ModelCatalog.refineModels[0].id
+      defaults.string(forKey: Key.refineModel) ?? ModelCatalog.defaultRefineModelID
     let storedRefinePrompt =
       defaults.string(forKey: Key.refinePrompt) ?? Self.defaultRefinePrompt
     let usesObsoleteDefault =

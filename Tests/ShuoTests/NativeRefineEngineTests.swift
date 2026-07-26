@@ -3,21 +3,6 @@ import Testing
 @testable import Shuo
 
 @Test
-@MainActor
-func defaultPromptDescribesProofreadingWithoutProtocolDetails() {
-  let prompt = AppSettings.defaultRefinePrompt
-
-  #expect(prompt.contains("not a conversational assistant"))
-  #expect(prompt.contains("natural punctuation"))
-  #expect(prompt.contains("misspelled English words"))
-  #expect(!prompt.contains("<corrected>"))
-  #expect(
-    NativeRefineEngine.instructions(userPrompt: "Apply placeholder preferences.")
-      .contains("<corrected>...</corrected>")
-  )
-}
-
-@Test
 func correctionExtractionAcceptsSupportedTagVariants() {
   #expect(
     NativeRefineEngine.extractCorrection(

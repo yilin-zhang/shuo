@@ -170,7 +170,7 @@ private struct MenuContent: View {
         )
         .labelsHidden()
         .toggleStyle(.switch)
-        .disabled(!model.canEnableApp || model.isManagingModels)
+        .disabled(!model.canEnableApp || model.appToggleDisabled)
       }
 
       Text(shortcutHelp)
@@ -194,7 +194,7 @@ private struct MenuContent: View {
       } label: {
         Label(L10n.string("menu.reload"), systemImage: "arrow.clockwise")
       }
-      .disabled(model.isManagingModels)
+      .disabled(model.modelInteractionsDisabled)
       Divider()
       Button {
         NSApplication.shared.terminate(nil)
@@ -232,7 +232,7 @@ private struct SettingsView: View {
         ModelList(
           title: L10n.string("settings.transcription"),
           groups: ModelCatalog.asrGroups,
-          interactionsDisabled: model.isManagingModels,
+          interactionsDisabled: model.modelInteractionsDisabled,
           status: model.asrModelStatus,
           progress: { model.modelDownloadProgress(kind: .transcription, id: $0) }
         ) { option in
@@ -247,7 +247,7 @@ private struct SettingsView: View {
         ModelList(
           title: L10n.string("settings.refine"),
           groups: ModelCatalog.refineGroups,
-          interactionsDisabled: model.isManagingModels,
+          interactionsDisabled: model.modelInteractionsDisabled,
           status: model.refineModelStatus,
           progress: { model.modelDownloadProgress(kind: .refine, id: $0) }
         ) { option in
@@ -266,7 +266,7 @@ private struct SettingsView: View {
             set: { model.setRefineEnabled($0) }
           )
         )
-        .disabled(!model.canEnableRefine || model.isManagingModels)
+        .disabled(!model.canEnableRefine || model.modelInteractionsDisabled)
         if !model.canEnableRefine {
           Text(L10n.string("settings.refineUnavailable"))
             .font(.caption)
@@ -310,6 +310,7 @@ private struct SettingsView: View {
                 model.recordShortcut()
               }
             }
+            .disabled(model.shortcutConfigurationDisabled && !model.isRecordingShortcut)
           }
         }
         Picker(L10n.string("settings.behavior"), selection: $settings.hotkeyMode) {
@@ -317,6 +318,7 @@ private struct SettingsView: View {
             Text(mode.label).tag(mode)
           }
         }
+        .disabled(model.shortcutConfigurationDisabled || model.isRecordingShortcut)
       }
 
       Section(L10n.string("settings.system")) {
@@ -324,10 +326,7 @@ private struct SettingsView: View {
           L10n.string("settings.launchAtLogin"),
           isOn: Binding(
             get: { settings.launchAtLogin },
-            set: {
-              settings.launchAtLogin = $0
-              model.applyLaunchAtLogin()
-            }
+            set: { model.setLaunchAtLogin($0) }
           ))
         PermissionRow(
           L10n.string("settings.microphone"),
@@ -356,7 +355,7 @@ private struct SettingsView: View {
           model.reloadModels()
         }
         .buttonStyle(.borderedProminent)
-        .disabled(model.isManagingModels)
+        .disabled(model.modelInteractionsDisabled)
       }
     }
     .formStyle(.grouped)
@@ -368,7 +367,7 @@ private struct SettingsView: View {
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
     {
       _ in
-      model.refreshPermissions()
+      model.refreshSystemState()
     }
     .alert(
       L10n.string("delete.title"),

@@ -183,6 +183,26 @@ func modelLoadEventsAreMonotonicAndCoalesced() {
   #expect(recorder.events == [.downloading(0), .downloading(0.01), .activating])
 }
 
+@Test
+func dictationAndProcessingStatesExposeInteractionBoundaries() {
+  #expect(ShuoState.listening.isDictating)
+  #expect(!ShuoState.listening.isProcessing)
+  #expect(ShuoState.transcribing.isDictating)
+  #expect(ShuoState.transcribing.isProcessing)
+  #expect(ShuoState.refining.isProcessing)
+  #expect(ShuoState.outputting.isProcessing)
+  #expect(!ShuoState.idle.isDictating)
+  #expect(!ShuoState.disabled.isProcessing)
+}
+
+@Test
+func launchAtLoginReflectsSystemServiceStatus() {
+  #expect(AppModel.launchAtLoginEnabled(for: .enabled))
+  #expect(AppModel.launchAtLoginEnabled(for: .requiresApproval))
+  #expect(!AppModel.launchAtLoginEnabled(for: .notRegistered))
+  #expect(!AppModel.launchAtLoginEnabled(for: .notFound))
+}
+
 private func temporaryDirectory() throws -> URL {
   let directory = FileManager.default.temporaryDirectory
     .appending(path: "shuo-tests-\(UUID().uuidString)")
