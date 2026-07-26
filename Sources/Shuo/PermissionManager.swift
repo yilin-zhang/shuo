@@ -1,6 +1,19 @@
 import AVFoundation
+import AppKit
 import ApplicationServices
 import CoreGraphics
+
+enum PermissionKind: String {
+  case microphone = "Privacy_Microphone"
+  case accessibility = "Privacy_Accessibility"
+  case inputMonitoring = "Privacy_ListenEvent"
+
+  var settingsURL: URL {
+    URL(
+      string: "x-apple.systempreferences:com.apple.preference.security?\(rawValue)"
+    )!
+  }
+}
 
 enum PermissionManager {
   static func requestAll() async {
@@ -24,5 +37,10 @@ enum PermissionManager {
 
   static var inputMonitoringGranted: Bool {
     CGPreflightListenEventAccess()
+  }
+
+  @MainActor
+  static func openSettings(for permission: PermissionKind) {
+    NSWorkspace.shared.open(permission.settingsURL)
   }
 }

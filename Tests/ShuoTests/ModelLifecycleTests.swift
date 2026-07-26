@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Shuo
@@ -58,34 +59,140 @@ func downloadedRefineModelKeepsRefinePreference() {
 @Test
 func modelStatusPrioritizesActiveThenLoadingThenAvailability() {
   let id = "placeholder-model"
+  let token = UUID()
+  let activating = ModelOperation(
+    token: token,
+    kind: .transcription,
+    id: id,
+    event: .activating
+  )
+  let downloading = ModelOperation(
+    token: token,
+    kind: .transcription,
+    id: id,
+    event: .downloading(0.5)
+  )
 
   #expect(
-    ModelStatus.resolve(id: id, activeID: id, loadingID: id, isDownloaded: true)
+    ModelStatus.resolve(id: id, activeID: id, operation: activating, isDownloaded: true)
       == .active
   )
   #expect(
-    ModelStatus.resolve(id: id, activeID: nil, loadingID: id, isDownloaded: true)
+    ModelStatus.resolve(id: id, activeID: nil, operation: activating, isDownloaded: true)
       == .activating
   )
   #expect(
-    ModelStatus.resolve(id: id, activeID: nil, loadingID: id, isDownloaded: false)
+    ModelStatus.resolve(id: id, activeID: nil, operation: downloading, isDownloaded: false)
       == .downloading
   )
   #expect(
-    ModelStatus.resolve(id: id, activeID: nil, loadingID: nil, isDownloaded: true)
+    ModelStatus.resolve(id: id, activeID: nil, operation: nil, isDownloaded: true)
       == .downloaded
   )
   #expect(
-    ModelStatus.resolve(id: id, activeID: nil, loadingID: nil, isDownloaded: false)
+    ModelStatus.resolve(id: id, activeID: nil, operation: nil, isDownloaded: false)
       == .downloadRequired
   )
   #expect(
     ModelStatus.resolve(
       id: id,
       activeID: id,
-      loadingID: nil,
+      operation: nil,
       isDownloaded: true,
       isDeleting: true
     ) == .deleting
   )
+}
+
+@Test
+func incompleteASRCacheIsNotDownloadable() throws {
+  let directory = try temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+
+  try createFile("config.json", in: directory)
+  #expect(!NativeASREngine.isCompleteModelDirectory(directory))
+
+  for path in [
+    "AudioEncoder.mlmodelc/coremldata.bin",
+    "TextDecoder.mlmodelc/coremldata.bin",
+    "MelSpectrogram.mlmodelc/coremldata.bin",
+  ] {
+    try createFile(path, in: directory)
+  }
+  #expect(NativeASREngine.isCompleteModelDirectory(directory))
+}
+
+@Test
+func refineCacheRequiresEveryIndexedWeight() throws {
+  let directory = try temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+
+  try createFile("config.json", in: directory)
+  try createFile("tokenizer_config.json", in: directory)
+  try createFile(
+    "model.safetensors.index.json",
+    contents:
+      #"{"weight_map":{"placeholder-a":"weights-00001-of-00002.safetensors","placeholder-b":"weights-00002-of-00002.safetensors"}}"#,
+    in: directory
+  )
+  #expect(!NativeRefineEngine.isCompleteSnapshot(directory))
+
+  try createFile("weights-00001-of-00002.safetensors", in: directory)
+  #expect(!NativeRefineEngine.isCompleteSnapshot(directory))
+  try createFile("weights-00002-of-00002.safetensors", in: directory)
+  #expect(NativeRefineEngine.isCompleteSnapshot(directory))
+}
+
+@Test
+func refineCacheAcceptsSingleWeightFile() throws {
+  let directory = try temporaryDirectory()
+  defer { try? FileManager.default.removeItem(at: directory) }
+
+  try createFile("config.json", in: directory)
+  try createFile("tokenizer_config.json", in: directory)
+  try createFile("model.safetensors", in: directory)
+
+  #expect(NativeRefineEngine.isCompleteSnapshot(directory))
+}
+
+@Test
+func modelLoadEventsAreMonotonicAndCoalesced() {
+  let recorder = EventRecorder()
+  let relay = ModelLoadEventRelay { recorder.append($0) }
+
+  relay.send(.downloading(0))
+  relay.send(.downloading(0.009))
+  relay.send(.downloading(0.01))
+  relay.send(.downloading(0.005))
+  relay.send(.activating)
+  relay.send(.downloading(1))
+
+  #expect(recorder.events == [.downloading(0), .downloading(0.01), .activating])
+}
+
+private func temporaryDirectory() throws -> URL {
+  let directory = FileManager.default.temporaryDirectory
+    .appending(path: "shuo-tests-\(UUID().uuidString)")
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  return directory
+}
+
+private func createFile(_ path: String, contents: String = "", in directory: URL) throws {
+  let file = directory.appending(path: path)
+  try FileManager.default.createDirectory(
+    at: file.deletingLastPathComponent(),
+    withIntermediateDirectories: true
+  )
+  try Data(contents.utf8).write(to: file)
+}
+
+private final class EventRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private(set) var events: [ModelLoadEvent] = []
+
+  func append(_ event: ModelLoadEvent) {
+    lock.withLock {
+      events.append(event)
+    }
+  }
 }

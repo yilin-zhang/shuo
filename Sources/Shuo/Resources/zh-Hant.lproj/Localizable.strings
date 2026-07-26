@@ -60,13 +60,15 @@
 "delete.message" = "這會從本機刪除 %@，之後仍可重新下載。";
 "delete.help" = "刪除已下載的模型";
 "model.active" = "已啟用";
-"model.downloaded" = "已下載";
-"model.downloadRequired" = "需要下載";
+"model.downloaded" = "啟用";
+"model.downloadRequired" = "下載並啟用";
 "model.downloading" = "正在下載…";
+"model.downloadingProgress" = "正在下載… %lld%%";
 "model.activating" = "正在啟用…";
 "model.deleting" = "正在刪除…";
 "permission.granted" = "已授權";
 "permission.required" = "需要授權";
+"permission.openSettings" = "開啟系統設定";
 "key.rightCommand" = "右 Command (⌘)";
 "key.leftCommand" = "左 Command (⌘)";
 "key.leftShift" = "左 Shift (⇧)";

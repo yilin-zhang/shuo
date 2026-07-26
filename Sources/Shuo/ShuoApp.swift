@@ -86,17 +86,29 @@ private struct ModelSetupView: View {
           Text(option.name).tag(option.id)
         }
       }
+      .disabled(model.isManagingModels)
 
       if model.isInitialModelSetup {
         Divider()
         Toggle(L10n.string("setup.downloadRefine"), isOn: $includeRefine)
+          .disabled(model.isManagingModels)
         if includeRefine {
           Picker(L10n.string("setup.refine"), selection: $refineID) {
             ForEach(ModelCatalog.refineModels) { option in
               Text("\(option.name) — \(option.detail)").tag(option.id)
             }
           }
+          .disabled(model.isManagingModels)
         }
+      }
+
+      if let operation = model.modelOperation {
+        ModelOperationProgress(operation: operation)
+      }
+      if let error = model.modelSetupError {
+        Text(error)
+          .font(.caption)
+          .foregroundStyle(.red)
       }
 
       HStack {
@@ -107,20 +119,31 @@ private struct ModelSetupView: View {
             includeRefine: model.isInitialModelSetup && includeRefine,
             refineID: refineID
           )
-          dismissWindow(id: "model-setup")
         }
         .keyboardShortcut(.defaultAction)
+        .disabled(model.isManagingModels)
       }
     }
     .padding(24)
     .frame(width: 480)
     .interactiveDismissDisabled()
+    .onChange(of: model.needsModelSetup) { _, needsSetup in
+      if !needsSetup {
+        dismissWindow(id: "model-setup")
+      }
+    }
   }
 }
 
 private struct MenuContent: View {
   @ObservedObject var model: AppModel
+  @ObservedObject private var settings: AppSettings
   @Environment(\.openSettings) private var openSettings
+
+  init(model: AppModel) {
+    self.model = model
+    settings = model.settings
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -137,13 +160,13 @@ private struct MenuContent: View {
         Toggle(
           "",
           isOn: Binding(
-            get: { model.settings.enabled && model.canEnableApp },
+            get: { settings.enabled && model.canEnableApp },
             set: { model.setEnabled($0) }
           )
         )
         .labelsHidden()
         .toggleStyle(.switch)
-        .disabled(!model.canEnableApp)
+        .disabled(!model.canEnableApp || model.isManagingModels)
       }
 
       Text(shortcutHelp)
@@ -167,6 +190,7 @@ private struct MenuContent: View {
       } label: {
         Label(L10n.string("menu.reload"), systemImage: "arrow.clockwise")
       }
+      .disabled(model.isManagingModels)
       Divider()
       Button {
         NSApplication.shared.terminate(nil)
@@ -179,11 +203,11 @@ private struct MenuContent: View {
   }
 
   private var shortcutHelp: String {
-    switch model.settings.hotkeyMode {
+    switch settings.hotkeyMode {
     case .hold:
-      L10n.format("menu.holdHelp", model.settings.hotkeyShortcut.label)
+      L10n.format("menu.holdHelp", settings.hotkeyShortcut.label)
     case .toggle:
-      L10n.format("menu.toggleHelp", model.settings.hotkeyShortcut.label)
+      L10n.format("menu.toggleHelp", settings.hotkeyShortcut.label)
     }
   }
 }
@@ -204,7 +228,9 @@ private struct SettingsView: View {
         ModelList(
           title: L10n.string("settings.transcription"),
           options: ModelCatalog.asrModels,
-          status: model.asrModelStatus
+          interactionsDisabled: model.isManagingModels,
+          status: model.asrModelStatus,
+          progress: { model.modelDownloadProgress(kind: .transcription, id: $0) }
         ) { option in
           pendingModelDeletion = ModelDeletion(
             id: option.id,
@@ -217,7 +243,9 @@ private struct SettingsView: View {
         ModelList(
           title: L10n.string("settings.refine"),
           options: ModelCatalog.refineModels,
-          status: model.refineModelStatus
+          interactionsDisabled: model.isManagingModels,
+          status: model.refineModelStatus,
+          progress: { model.modelDownloadProgress(kind: .refine, id: $0) }
         ) { option in
           pendingModelDeletion = ModelDeletion(
             id: option.id,
@@ -234,7 +262,7 @@ private struct SettingsView: View {
             set: { model.setRefineEnabled($0) }
           )
         )
-        .disabled(!model.canEnableRefine)
+        .disabled(!model.canEnableRefine || model.isManagingModels)
         if !model.canEnableRefine {
           Text(L10n.string("settings.refineUnavailable"))
             .font(.caption)
@@ -288,10 +316,24 @@ private struct SettingsView: View {
               model.applyLaunchAtLogin()
             }
           ))
-        PermissionRow(L10n.string("settings.microphone"), granted: model.microphoneGranted)
-        PermissionRow(L10n.string("settings.accessibility"), granted: model.accessibilityGranted)
         PermissionRow(
-          L10n.string("settings.inputMonitoring"), granted: model.inputMonitoringGranted)
+          L10n.string("settings.microphone"),
+          granted: model.microphoneGranted
+        ) {
+          model.openPermissionSettings(.microphone)
+        }
+        PermissionRow(
+          L10n.string("settings.accessibility"),
+          granted: model.accessibilityGranted
+        ) {
+          model.openPermissionSettings(.accessibility)
+        }
+        PermissionRow(
+          L10n.string("settings.inputMonitoring"),
+          granted: model.inputMonitoringGranted
+        ) {
+          model.openPermissionSettings(.inputMonitoring)
+        }
       }
 
       HStack {
@@ -301,11 +343,17 @@ private struct SettingsView: View {
           model.reloadModels()
         }
         .buttonStyle(.borderedProminent)
+        .disabled(model.isManagingModels)
       }
     }
     .formStyle(.grouped)
     .padding()
     .frame(width: 560, height: 560)
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
+    {
+      _ in
+      model.refreshPermissions()
+    }
     .alert(
       L10n.string("delete.title"),
       isPresented: Binding(
@@ -335,7 +383,9 @@ private struct SettingsView: View {
 private struct ModelList: View {
   let title: String
   let options: [ModelOption]
+  let interactionsDisabled: Bool
   let status: (String) -> ModelStatus
+  let progress: (String) -> Double?
   let delete: (ModelOption) -> Void
   let select: (ModelOption) -> Void
 
@@ -348,7 +398,11 @@ private struct ModelList: View {
             ModelRow(
               name: option.name,
               detail: option.detail,
-              status: status(option.id),
+              state: ModelRowState(
+                status: status(option.id),
+                downloadProgress: progress(option.id),
+                interactionsDisabled: interactionsDisabled
+              ),
               deleteAction: { delete(option) },
               action: { select(option) }
             )
@@ -369,20 +423,33 @@ private struct ModelList: View {
 }
 
 private struct ModelDeletion {
-  enum Kind {
-    case transcription
-    case refine
-  }
-
   let id: String
   let name: String
-  let kind: Kind
+  let kind: ModelKind
+}
+
+private struct ModelRowState {
+  let status: ModelStatus
+  let downloadProgress: Double?
+  let interactionsDisabled: Bool
+
+  var actionDisabled: Bool {
+    interactionsDisabled
+      || status == .active
+      || status == .downloading
+      || status == .activating
+      || status == .deleting
+  }
+
+  var canDelete: Bool {
+    !interactionsDisabled && (status == .downloaded || status == .active)
+  }
 }
 
 private struct ModelRow: View {
   let name: String
   let detail: String
-  let status: ModelStatus
+  let state: ModelRowState
   let deleteAction: () -> Void
   let action: () -> Void
 
@@ -399,33 +466,38 @@ private struct ModelRow: View {
               .foregroundStyle(.secondary)
           }
           Spacer()
-          Text(status.label)
+          Text(statusLabel)
             .font(.caption)
-            .foregroundStyle(status == .active ? .green : .secondary)
+            .foregroundStyle(state.status == .active ? .green : .secondary)
         }
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .disabled(
-        status == .active || status == .downloading || status == .activating
-          || status == .deleting
-      )
+      .disabled(state.actionDisabled)
 
-      if status == .downloaded || status == .active {
+      if state.status == .downloaded || state.status == .active {
         Button(action: deleteAction) {
           Image(systemName: "trash")
             .foregroundStyle(.secondary)
         }
         .buttonStyle(.borderless)
+        .disabled(!state.canDelete)
         .help(L10n.string("delete.help"))
       }
     }
     .padding(.vertical, 3)
   }
 
+  private var statusLabel: String {
+    guard state.status == .downloading, let progress = state.downloadProgress else {
+      return state.status.label
+    }
+    return L10n.format("model.downloadingProgress", Int(progress * 100))
+  }
+
   @ViewBuilder
   private var statusIcon: some View {
-    switch status {
+    switch state.status {
     case .active:
       Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
     case .downloaded:
@@ -434,6 +506,29 @@ private struct ModelRow: View {
       Image(systemName: "arrow.down.circle").foregroundStyle(.secondary)
     case .downloading, .activating, .deleting:
       ProgressView().controlSize(.small)
+    }
+  }
+}
+
+private struct ModelOperationProgress: View {
+  let operation: ModelOperation
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      switch operation.event {
+      case .downloading(let progress):
+        Text(L10n.format("model.downloadingProgress", Int(progress * 100)))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        ProgressView(value: progress)
+      case .activating:
+        HStack(spacing: 8) {
+          ProgressView().controlSize(.small)
+          Text(L10n.string("model.activating"))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
     }
   }
 }
@@ -482,19 +577,26 @@ private enum MenuBarIcon {
 private struct PermissionRow: View {
   let title: String
   let granted: Bool
+  let openSettings: () -> Void
 
-  init(_ title: String, granted: Bool) {
+  init(_ title: String, granted: Bool, openSettings: @escaping () -> Void) {
     self.title = title
     self.granted = granted
+    self.openSettings = openSettings
   }
 
   var body: some View {
     LabeledContent(title) {
-      Label(
-        granted ? L10n.string("permission.granted") : L10n.string("permission.required"),
-        systemImage: granted ? "checkmark.circle.fill" : "exclamationmark.circle"
-      )
-      .foregroundStyle(granted ? .green : .orange)
+      HStack {
+        Label(
+          granted ? L10n.string("permission.granted") : L10n.string("permission.required"),
+          systemImage: granted ? "checkmark.circle.fill" : "exclamationmark.circle"
+        )
+        .foregroundStyle(granted ? .green : .orange)
+        if !granted {
+          Button(L10n.string("permission.openSettings"), action: openSettings)
+        }
+      }
     }
   }
 }

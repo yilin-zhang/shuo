@@ -6,16 +6,34 @@ final class NativeASREngine {
   private var whisper: WhisperKit?
   private var loadedModelID: String?
 
-  func load(modelID: String) async throws {
+  func load(
+    modelID: String,
+    eventHandler: @Sendable @escaping (ModelLoadEvent) -> Void = { _ in }
+  ) async throws {
     guard loadedModelID != modelID || whisper == nil else { return }
     stopRecording()
 
+    let modelFolder: URL
+    if Self.isDownloaded(modelID: modelID) {
+      modelFolder = Self.modelDirectory(modelID: modelID)
+    } else {
+      eventHandler(.downloading(0))
+      modelFolder = try await WhisperKit.download(
+        variant: modelID,
+        progressCallback: { progress in
+          eventHandler(.downloading(progress.fractionCompleted))
+        }
+      )
+    }
+    try Task.checkCancellation()
+    eventHandler(.activating)
+
     let config = WhisperKitConfig(
-      model: modelID,
+      modelFolder: modelFolder.path,
       verbose: false,
       prewarm: true,
       load: true,
-      download: true
+      download: false
     )
     let loadedWhisper = try await WhisperKit(config)
     try Task.checkCancellation()
@@ -24,7 +42,19 @@ final class NativeASREngine {
   }
 
   nonisolated static func isDownloaded(modelID: String) -> Bool {
-    FileManager.default.fileExists(atPath: modelDirectory(modelID: modelID).path)
+    isCompleteModelDirectory(modelDirectory(modelID: modelID))
+  }
+
+  nonisolated static func isCompleteModelDirectory(_ directory: URL) -> Bool {
+    let requiredPaths = [
+      directory.appending(path: "config.json"),
+      directory.appending(path: "AudioEncoder.mlmodelc/coremldata.bin"),
+      directory.appending(path: "TextDecoder.mlmodelc/coremldata.bin"),
+      directory.appending(path: "MelSpectrogram.mlmodelc/coremldata.bin"),
+    ]
+    return requiredPaths.allSatisfy {
+      FileManager.default.fileExists(atPath: $0.path)
+    }
   }
 
   nonisolated static func deleteDownloadedModel(modelID: String) throws {

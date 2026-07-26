@@ -13,15 +13,33 @@ enum ModelStatus: Equatable {
   static func resolve(
     id: String,
     activeID: String?,
-    loadingID: String?,
+    operation: ModelOperation?,
     isDownloaded: Bool,
     isDeleting: Bool = false
   ) -> Self {
     if isDeleting { return .deleting }
     if activeID == id { return .active }
-    if loadingID == id { return isDownloaded ? .activating : .downloading }
+    if operation?.id == id {
+      switch operation?.event {
+      case .downloading: return .downloading
+      case .activating: return .activating
+      case nil: break
+      }
+    }
     return isDownloaded ? .downloaded : .downloadRequired
   }
+}
+
+enum ModelKind: Equatable {
+  case transcription
+  case refine
+}
+
+struct ModelOperation: Equatable {
+  let token: UUID
+  let kind: ModelKind
+  let id: String
+  let event: ModelLoadEvent
 }
 
 struct ModelStartupPlan: Equatable {
@@ -53,16 +71,14 @@ final class AppModel: ObservableObject {
   @Published private(set) var inputMonitoringGranted = false
   @Published private(set) var activeASRModel: String?
   @Published private(set) var activeRefineModel: String?
-  @Published private(set) var loadingModel: String?
+  @Published private(set) var modelOperation: ModelOperation?
+  @Published private(set) var modelSetupError: String?
   @Published private(set) var isRecordingShortcut = false
   @Published private(set) var needsModelSetup = false
   @Published private(set) var isInitialModelSetup = false
-  @Published private var downloadedASRModels = Set(
-    ModelCatalog.asrModels.lazy.map(\.id).filter(NativeASREngine.isDownloaded)
-  )
-  @Published private var downloadedRefineModels = Set(
-    ModelCatalog.refineModels.lazy.map(\.id).filter(NativeRefineEngine.isDownloaded)
-  )
+  @Published private var downloadedASRModels = Set<String>()
+  @Published private var downloadedRefineModels = Set<String>()
+  @Published private var isDiscoveringModels = true
   @Published private var deletingASRModels = Set<String>()
   @Published private var deletingRefineModels = Set<String>()
 
@@ -74,6 +90,11 @@ final class AppModel: ObservableObject {
 
   var canEnableApp: Bool {
     activeASRModel != nil
+  }
+
+  var isManagingModels: Bool {
+    isDiscoveringModels || modelOperation != nil || !deletingASRModels.isEmpty
+      || !deletingRefineModels.isEmpty
   }
 
   private let asr = NativeASREngine()
@@ -91,13 +112,24 @@ final class AppModel: ObservableObject {
   }
 
   func prepare() async {
+    let asrIDs = ModelCatalog.asrModels.map(\.id)
+    let refineIDs = ModelCatalog.refineModels.map(\.id)
+    let downloadedModels = await Task.detached(priority: .utility) {
+      let asr = Set(asrIDs.filter(NativeASREngine.isDownloaded))
+      let refine = Set(refineIDs.filter(NativeRefineEngine.isDownloaded))
+      return (asr, refine)
+    }.value
+    downloadedASRModels = downloadedModels.0
+    downloadedRefineModels = downloadedModels.1
+    isDiscoveringModels = false
+
     await PermissionManager.requestAll()
     refreshPermissions()
     do {
       try hotkey.start()
       let plan = ModelStartupPlan.resolve(
-        hasASR: NativeASREngine.isDownloaded(modelID: settings.asrModel),
-        hasRefine: NativeRefineEngine.isDownloaded(modelID: settings.refineModel),
+        hasASR: downloadedASRModels.contains(settings.asrModel),
+        hasRefine: downloadedRefineModels.contains(settings.refineModel),
         refineEnabled: settings.refineEnabled,
         hasCompletedInitialSetup: settings.hasCompletedInitialSetup
       )
@@ -118,57 +150,48 @@ final class AppModel: ObservableObject {
   }
 
   func reloadModels() {
-    runModelOperation { [self] in
-      try await loadConfiguredModels()
+    runModelOperation(kind: .transcription, id: settings.asrModel) { [self] token in
+      try await loadConfiguredModels(token: token)
     }
   }
 
   func selectASRModel(_ id: String) {
-    runModelOperation { [self] in
-      try await loadASR(id)
+    runModelOperation(kind: .transcription, id: id) { [self] token in
+      try await loadASR(id, token: token)
       settings.asrModel = id
     }
   }
 
   func selectRefineModel(_ id: String) {
-    runModelOperation { [self] in
-      try await loadRefiner(id)
+    runModelOperation(kind: .refine, id: id) { [self] token in
+      try await loadRefiner(id, token: token)
       settings.refineModel = id
     }
   }
 
   func installSelectedModels(asrID: String, includeRefine: Bool, refineID: String) {
-    needsModelSetup = false
-    settings.hasCompletedInitialSetup = true
-    runModelOperation { [self] in
-      do {
-        try await loadASR(asrID)
-        settings.asrModel = asrID
-        settings.refineEnabled = includeRefine
-        if includeRefine {
-          try await loadRefiner(refineID)
-          settings.refineModel = refineID
-        }
-      } catch {
-        if activeRefineModel == nil {
-          settings.refineEnabled = false
-        }
-        if !NativeASREngine.isDownloaded(modelID: settings.asrModel) {
-          requestModelSetup()
-        }
-        throw error
+    modelSetupError = nil
+    runModelOperation(kind: .transcription, id: asrID) { [self] token in
+      try await loadASR(asrID, token: token)
+      settings.asrModel = asrID
+      if includeRefine {
+        try await loadRefiner(refineID, token: token)
+        settings.refineModel = refineID
       }
+      settings.refineEnabled = includeRefine
+      settings.hasCompletedInitialSetup = true
+      needsModelSetup = false
     }
   }
 
   func deleteASRModel(_ id: String) {
+    guard !isManagingModels else { return }
     let status = asrModelStatus(id)
     guard status == .downloaded || status == .active else { return }
     if status == .active {
       modelTask?.cancel()
       settings.enabled = false
       activeASRModel = nil
-      loadingModel = nil
       transition(to: .disabled)
     }
     deletingASRModels.insert(id)
@@ -189,13 +212,13 @@ final class AppModel: ObservableObject {
   }
 
   func deleteRefineModel(_ id: String) {
+    guard !isManagingModels else { return }
     let status = refineModelStatus(id)
     guard status == .downloaded || status == .active else { return }
     if status == .active {
       modelTask?.cancel()
       settings.refineEnabled = false
       activeRefineModel = nil
-      loadingModel = nil
       transition(to: settings.enabled ? .idle : .disabled)
     }
     deletingRefineModels.insert(id)
@@ -219,7 +242,7 @@ final class AppModel: ObservableObject {
   }
 
   func setRefineEnabled(_ enabled: Bool) {
-    guard !state.isDictating else { return }
+    guard !state.isDictating, !isManagingModels else { return }
     if enabled {
       guard canEnableRefine else {
         settings.refineEnabled = false
@@ -236,6 +259,7 @@ final class AppModel: ObservableObject {
   func asrModelStatus(_ id: String) -> ModelStatus {
     modelStatus(
       id: id,
+      kind: .transcription,
       activeID: activeASRModel,
       isDownloaded: downloadedASRModels.contains(id),
       isDeleting: deletingASRModels.contains(id)
@@ -245,10 +269,20 @@ final class AppModel: ObservableObject {
   func refineModelStatus(_ id: String) -> ModelStatus {
     modelStatus(
       id: id,
+      kind: .refine,
       activeID: activeRefineModel,
       isDownloaded: downloadedRefineModels.contains(id),
       isDeleting: deletingRefineModels.contains(id)
     )
+  }
+
+  func modelDownloadProgress(kind: ModelKind, id: String) -> Double? {
+    guard
+      modelOperation?.kind == kind,
+      modelOperation?.id == id,
+      case .downloading(let progress) = modelOperation?.event
+    else { return nil }
+    return progress
   }
 
   func applyLaunchAtLogin() {
@@ -269,7 +303,12 @@ final class AppModel: ObservableObject {
     inputMonitoringGranted = PermissionManager.inputMonitoringGranted
   }
 
+  func openPermissionSettings(_ permission: PermissionKind) {
+    PermissionManager.openSettings(for: permission)
+  }
+
   func setEnabled(_ enabled: Bool) {
+    guard !isManagingModels else { return }
     guard !enabled || canEnableApp else {
       settings.enabled = false
       return
@@ -298,63 +337,134 @@ final class AppModel: ObservableObject {
     isRecordingShortcut = false
   }
 
-  private func loadConfiguredModels() async throws {
-    try await loadASR(settings.asrModel)
+  private func loadConfiguredModels(token: UUID) async throws {
+    try await loadASR(settings.asrModel, token: token)
     if settings.refineEnabled {
-      try await loadRefiner(settings.refineModel)
+      try await loadRefiner(settings.refineModel, token: token)
     }
   }
 
   private func requestModelSetup(isInitial: Bool? = nil) {
     isInitialModelSetup = isInitial ?? !settings.hasCompletedInitialSetup
     needsModelSetup = true
+    modelSetupError = nil
     transition(to: .disabled)
   }
 
-  private func loadASR(_ id: String) async throws {
-    loadingModel = id
+  private func loadASR(_ id: String, token: UUID) async throws {
+    updateOperation(
+      token: token,
+      kind: .transcription,
+      id: id,
+      event: downloadedASRModels.contains(id) ? .activating : .downloading(0)
+    )
     transition(to: .loading(L10n.string("loading.transcription")))
-    try await asr.load(modelID: id)
+    let relay = makeEventRelay(token: token, kind: .transcription, id: id)
+    try await asr.load(modelID: id, eventHandler: relay.send)
     try Task.checkCancellation()
+    guard modelOperation?.token == token else { throw CancellationError() }
     activeASRModel = id
     downloadedASRModels.insert(id)
   }
 
-  private func loadRefiner(_ id: String) async throws {
-    loadingModel = id
+  private func loadRefiner(_ id: String, token: UUID) async throws {
+    updateOperation(
+      token: token,
+      kind: .refine,
+      id: id,
+      event: downloadedRefineModels.contains(id) ? .activating : .downloading(0)
+    )
     transition(to: .loading(L10n.string("loading.refine")))
-    try await refiner.load(modelID: id)
+    let relay = makeEventRelay(token: token, kind: .refine, id: id)
+    try await refiner.load(modelID: id, eventHandler: relay.send)
     try Task.checkCancellation()
+    guard modelOperation?.token == token else { throw CancellationError() }
     activeRefineModel = id
     downloadedRefineModels.insert(id)
   }
 
   private func runModelOperation(
-    _ operation: @escaping @MainActor () async throws -> Void
+    kind: ModelKind,
+    id: String,
+    _ operation: @escaping @MainActor (UUID) async throws -> Void
   ) {
-    guard !state.isDictating else { return }
-    modelTask?.cancel()
+    guard !state.isDictating, !isManagingModels else { return }
+    let token = UUID()
+    modelOperation = ModelOperation(
+      token: token,
+      kind: kind,
+      id: id,
+      event: .activating
+    )
     modelTask = Task { [weak self] in
       guard let self else { return }
       do {
-        try await operation()
+        try await operation(token)
         try Task.checkCancellation()
-        finishModelOperation()
+        finishModelOperation(token: token)
       } catch is CancellationError {
-        return
+        cancelModelOperation(token: token)
       } catch {
-        showError(error)
+        failModelOperation(error, token: token)
       }
     }
   }
 
-  private func finishModelOperation() {
-    loadingModel = nil
+  private func updateOperation(
+    token: UUID,
+    kind: ModelKind,
+    id: String,
+    event: ModelLoadEvent
+  ) {
+    guard modelOperation?.token == token else { return }
+    if case .activating = modelOperation?.event, case .downloading = event {
+      return
+    }
+    if case .downloading(let previous) = modelOperation?.event,
+      case .downloading(let current) = event,
+      Int(current * 100) <= Int(previous * 100)
+    {
+      return
+    }
+    modelOperation = ModelOperation(token: token, kind: kind, id: id, event: event)
+  }
+
+  private func makeEventRelay(token: UUID, kind: ModelKind, id: String) -> ModelLoadEventRelay {
+    ModelLoadEventRelay { [weak self] event in
+      Task { @MainActor in
+        self?.updateOperation(token: token, kind: kind, id: id, event: event)
+      }
+    }
+  }
+
+  private func finishModelOperation(token: UUID) {
+    guard modelOperation?.token == token else { return }
+    modelOperation = nil
+    modelTask = nil
+    modelSetupError = nil
     transition(to: settings.enabled ? .idle : .disabled)
+  }
+
+  private func cancelModelOperation(token: UUID) {
+    guard modelOperation?.token == token else { return }
+    modelOperation = nil
+    modelTask = nil
+    transition(to: settings.enabled && canEnableApp ? .idle : .disabled)
+  }
+
+  private func failModelOperation(_ error: Error, token: UUID) {
+    guard modelOperation?.token == token else { return }
+    modelOperation = nil
+    modelTask = nil
+    if needsModelSetup {
+      modelSetupError = error.localizedDescription
+    }
+    showError(error)
   }
 
   private func modelStatus(
     id: String,
+    kind: ModelKind,
     activeID: String?,
     isDownloaded: Bool,
     isDeleting: Bool
@@ -362,7 +472,7 @@ final class AppModel: ObservableObject {
     ModelStatus.resolve(
       id: id,
       activeID: activeID,
-      loadingID: loadingModel,
+      operation: modelOperation?.kind == kind ? modelOperation : nil,
       isDownloaded: isDownloaded,
       isDeleting: isDeleting
     )
@@ -418,14 +528,13 @@ final class AppModel: ObservableObject {
   }
 
   private func showError(_ error: Error) {
-    loadingModel = nil
     asr.stopRecording()
     transition(to: .error(error.localizedDescription))
     errorResetTask?.cancel()
     errorResetTask = Task { [weak self] in
       try? await Task.sleep(for: .seconds(2.5))
       guard !Task.isCancelled, let self, case .error = state else { return }
-      transition(to: settings.enabled ? .idle : .disabled)
+      transition(to: settings.enabled && canEnableApp ? .idle : .disabled)
     }
   }
 

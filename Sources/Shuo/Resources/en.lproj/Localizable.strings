@@ -60,13 +60,15 @@
 "delete.message" = "This removes %@ from this Mac. You can download it again later.";
 "delete.help" = "Delete downloaded model";
 "model.active" = "Active";
-"model.downloaded" = "Downloaded";
-"model.downloadRequired" = "Download required";
+"model.downloaded" = "Activate";
+"model.downloadRequired" = "Download & Activate";
 "model.downloading" = "Downloading…";
+"model.downloadingProgress" = "Downloading… %lld%%";
 "model.activating" = "Activating…";
 "model.deleting" = "Deleting…";
 "permission.granted" = "Granted";
 "permission.required" = "Required";
+"permission.openSettings" = "Open Settings";
 "key.rightCommand" = "Right Command (⌘)";
 "key.leftCommand" = "Left Command (⌘)";
 "key.leftShift" = "Left Shift (⇧)";

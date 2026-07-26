@@ -14,11 +14,24 @@ actor NativeRefineEngine {
   private var container: ModelContainer?
   private var loadedModelID: String?
 
-  func load(modelID: String) async throws {
+  func load(
+    modelID: String,
+    eventHandler: @Sendable @escaping (ModelLoadEvent) -> Void = { _ in }
+  ) async throws {
     guard loadedModelID != modelID || container == nil else { return }
+    eventHandler(Self.isDownloaded(modelID: modelID) ? .activating : .downloading(0))
     let configuration = ModelConfiguration(id: modelID)
     let loadedContainer =
-      try await #huggingFaceLoadModelContainer(configuration: configuration)
+      try await #huggingFaceLoadModelContainer(
+        configuration: configuration,
+        progressHandler: { progress in
+          if progress.fractionCompleted >= 1 {
+            eventHandler(.activating)
+          } else {
+            eventHandler(.downloading(progress.fractionCompleted))
+          }
+        }
+      )
     try Task.checkCancellation()
     container = loadedContainer
     loadedModelID = modelID
@@ -30,7 +43,32 @@ actor NativeRefineEngine {
   }
 
   static func isDownloaded(modelID: String) -> Bool {
-    FileManager.default.fileExists(atPath: modelDirectory(modelID: modelID).path)
+    guard let snapshot = currentSnapshot(modelID: modelID) else { return false }
+    return isCompleteSnapshot(snapshot)
+  }
+
+  static func isCompleteSnapshot(_ snapshot: URL) -> Bool {
+    guard
+      FileManager.default.fileExists(atPath: snapshot.appending(path: "config.json").path),
+      FileManager.default.fileExists(
+        atPath: snapshot.appending(path: "tokenizer_config.json").path
+      )
+    else { return false }
+
+    let singleWeight = snapshot.appending(path: "model.safetensors")
+    if FileManager.default.fileExists(atPath: singleWeight.path) {
+      return true
+    }
+    let index = snapshot.appending(path: "model.safetensors.index.json")
+    guard
+      let data = try? Data(contentsOf: index),
+      let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let weightMap = value["weight_map"] as? [String: String],
+      !weightMap.isEmpty
+    else { return false }
+    return Set(weightMap.values).allSatisfy {
+      FileManager.default.fileExists(atPath: snapshot.appending(path: $0).path)
+    }
   }
 
   static func deleteDownloadedModel(modelID: String) throws {
@@ -44,6 +82,17 @@ actor NativeRefineEngine {
     precondition(components.count == 2, "Expected a Hugging Face repository ID")
     let repo = Repo.ID(namespace: components[0], name: components[1])
     return HubCache.default.repoDirectory(repo: repo, kind: .model)
+  }
+
+  private static func currentSnapshot(modelID: String) -> URL? {
+    let directory = modelDirectory(modelID: modelID)
+    let reference = directory.appending(path: "refs/main")
+    guard
+      let revision = try? String(contentsOf: reference, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !revision.isEmpty
+    else { return nil }
+    return directory.appending(path: "snapshots/\(revision)")
   }
 
   func refine(_ transcript: String, prompt: String) async throws -> Result {
