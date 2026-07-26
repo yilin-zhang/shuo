@@ -4,6 +4,7 @@
 "model.reliable" = "More reliable, slower";
 "model.quality" = "Higher quality, more memory";
 "model.highest" = "Highest quality, slowest";
+"model.recommended" = "(Recommended)";
 "loading.transcription" = "transcription model";
 "loading.refine" = "refine model";
 "refine.applied" = "Refine applied";

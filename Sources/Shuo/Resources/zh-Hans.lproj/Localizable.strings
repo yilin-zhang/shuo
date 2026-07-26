@@ -4,6 +4,7 @@
 "model.reliable" = "更可靠，速度较慢";
 "model.quality" = "质量更高，占用更多内存";
 "model.highest" = "质量最高，速度最慢";
+"model.recommended" = "（推荐）";
 "loading.transcription" = "转写模型";
 "loading.refine" = "润色模型";
 "refine.applied" = "润色已应用";

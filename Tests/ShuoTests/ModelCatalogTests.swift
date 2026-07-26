@@ -7,6 +7,8 @@ import Testing
 func qwenModelsAreCatalogDefaults() {
   #expect(ModelCatalog.asrModels.first?.id == ASRBackend.qwenModelID)
   #expect(ModelCatalog.refineModels.first?.id == ModelCatalog.defaultRefineModelID)
+  #expect(ModelCatalog.asrModels.first?.isRecommended == true)
+  #expect(ModelCatalog.refineModels.first?.isRecommended == true)
 }
 
 @Test

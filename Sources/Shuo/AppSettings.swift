@@ -20,6 +20,21 @@ struct ModelOption: Identifiable, Hashable {
   let id: String
   let name: String
   let detail: String
+  let isRecommended: Bool
+
+  init(id: String, name: String, detail: String, isRecommended: Bool = false) {
+    self.id = id
+    self.name = name
+    self.detail = detail
+    self.isRecommended = isRecommended
+  }
+
+  var subtitle: String {
+    guard isRecommended else { return detail }
+    return [detail, L10n.string("model.recommended")]
+      .filter { !$0.isEmpty }
+      .joined(separator: " ")
+  }
 }
 
 struct ModelGroup: Identifiable {
@@ -49,7 +64,8 @@ enum ModelCatalog {
           ModelOption(
             id: ASRBackend.qwenModelID,
             name: "Qwen3-ASR 0.6B 4-bit",
-            detail: ""
+            detail: "",
+            isRecommended: true
           )
         ]
       ),
@@ -69,7 +85,8 @@ enum ModelCatalog {
     ModelOption(
       id: defaultRefineModelID,
       name: "Qwen3 0.6B 4-bit",
-      detail: L10n.string("model.fast")
+      detail: L10n.string("model.fast"),
+      isRecommended: true
     ),
     ModelOption(
       id: "mlx-community/Qwen3-1.7B-4bit",

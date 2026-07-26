@@ -99,7 +99,7 @@ private struct ModelSetupView: View {
         if includeRefine {
           Picker(L10n.string("setup.refine"), selection: $refineID) {
             ForEach(ModelCatalog.refineModels) { option in
-              Text("\(option.name) — \(option.detail)").tag(option.id)
+              Text("\(option.name) — \(option.subtitle)").tag(option.id)
             }
           }
           .disabled(model.isManagingModels)
@@ -467,7 +467,7 @@ private struct ModelList: View {
               ForEach(group.options) { option in
                 ModelRow(
                   name: option.name,
-                  detail: option.detail,
+                  detail: option.subtitle,
                   state: ModelRowState(
                     status: status(option.id),
                     downloadProgress: progress(option.id),

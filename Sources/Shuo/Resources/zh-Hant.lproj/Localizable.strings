@@ -4,6 +4,7 @@
 "model.reliable" = "更可靠，速度較慢";
 "model.quality" = "品質更高，佔用更多記憶體";
 "model.highest" = "品質最高，速度最慢";
+"model.recommended" = "（推薦）";
 "loading.transcription" = "轉寫模型";
 "loading.refine" = "潤飾模型";
 "refine.applied" = "潤飾已套用";
