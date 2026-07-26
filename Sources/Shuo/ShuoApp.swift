@@ -527,37 +527,45 @@ private struct ModelRow: View {
   let action: () -> Void
 
   var body: some View {
-    HStack(spacing: 10) {
-      Button(action: action) {
-        HStack(spacing: 10) {
-          statusIcon
-            .frame(width: 18)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(name)
-            if !detail.isEmpty {
-              Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    VStack(spacing: 5) {
+      HStack(spacing: 10) {
+        Button(action: action) {
+          HStack(spacing: 10) {
+            statusIcon
+              .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(name)
+              if !detail.isEmpty {
+                Text(detail)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
             }
+            Spacer()
+            Text(statusLabel)
+              .font(.caption)
+              .foregroundStyle(state.status == .active ? .green : .secondary)
           }
-          Spacer()
-          Text(statusLabel)
-            .font(.caption)
-            .foregroundStyle(state.status == .active ? .green : .secondary)
+          .contentShape(Rectangle())
         }
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .disabled(state.actionDisabled)
+        .buttonStyle(.plain)
+        .disabled(state.actionDisabled)
 
-      if state.status == .downloaded || state.status == .active {
-        Button(action: deleteAction) {
-          Image(systemName: "trash")
-            .foregroundStyle(.secondary)
+        if state.status == .downloaded || state.status == .active {
+          Button(action: deleteAction) {
+            Image(systemName: "trash")
+              .foregroundStyle(.secondary)
+          }
+          .buttonStyle(.borderless)
+          .disabled(!state.canDelete)
+          .help(L10n.string("delete.help"))
         }
-        .buttonStyle(.borderless)
-        .disabled(!state.canDelete)
-        .help(L10n.string("delete.help"))
+      }
+
+      if state.status == .downloading, let progress = state.downloadProgress {
+        ProgressView(value: min(max(progress, 0), 1))
+          .progressViewStyle(.linear)
+          .padding(.leading, 28)
       }
     }
     .padding(.vertical, 3)
