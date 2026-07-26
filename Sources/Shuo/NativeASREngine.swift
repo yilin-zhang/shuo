@@ -91,11 +91,11 @@ enum ASRError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .modelNotLoaded:
-      "The transcription model is still loading."
+      L10n.string("error.asrLoading")
     case .recordingTooShort:
-      "The recording was too short."
+      L10n.string("error.tooShort")
     case .noSpeechDetected:
-      "No speech was detected."
+      L10n.string("error.noSpeech")
     }
   }
 }

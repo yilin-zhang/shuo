@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "Shuo",
+    defaultLocalization: "en",
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "Shuo", targets: ["Shuo"])
@@ -37,7 +38,8 @@ let package = Package(
                 .product(name: "HuggingFace", package: "swift-huggingface"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
             ],
-            path: "Sources/Shuo"
+            path: "Sources/Shuo",
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "ShuoTests",

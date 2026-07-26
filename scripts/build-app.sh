@@ -36,6 +36,13 @@ BIN_DIR=$(/usr/bin/xcrun swift build --disable-sandbox -c release --show-bin-pat
     "$PROJECT_DIR/Resources/ShuoMenuBarIconTemplate.png" \
     "$CONTENTS_DIR/Resources/ShuoMenuBarIconTemplate.png"
 
+for localization in "$PROJECT_DIR"/Resources/*.lproj; do
+    [[ -d "$localization" ]] || continue
+    /usr/bin/ditto \
+        "$localization" \
+        "$CONTENTS_DIR/Resources/$(basename "$localization")"
+done
+
 for bundle in "$BIN_DIR"/*.bundle; do
     [[ -e "$bundle" ]] || continue
     /usr/bin/ditto "$bundle" "$CONTENTS_DIR/Resources/$(basename "$bundle")"

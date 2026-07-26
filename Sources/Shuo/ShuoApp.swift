@@ -35,7 +35,7 @@ struct ShuoApp: App {
     }
     .menuBarExtraStyle(.window)
 
-    Window("Choose Models", id: "model-setup") {
+    Window(L10n.string("setup.title"), id: "model-setup") {
       ModelSetupView(model: model)
     }
     .defaultLaunchBehavior(.suppressed)
@@ -75,13 +75,13 @@ private struct ModelSetupView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       VStack(alignment: .leading, spacing: 6) {
-        Text("Choose a transcription model")
+        Text(L10n.string("setup.heading"))
           .font(.title2.bold())
-        Text("Models are downloaded once, then transcription runs entirely on this Mac.")
+        Text(L10n.string("setup.privacy"))
           .foregroundStyle(.secondary)
       }
 
-      Picker("Transcription model", selection: $asrID) {
+      Picker(L10n.string("setup.asr"), selection: $asrID) {
         ForEach(ModelCatalog.asrModels) { option in
           Text(option.name).tag(option.id)
         }
@@ -89,9 +89,9 @@ private struct ModelSetupView: View {
 
       if model.isInitialModelSetup {
         Divider()
-        Toggle("Download a Refine model", isOn: $includeRefine)
+        Toggle(L10n.string("setup.downloadRefine"), isOn: $includeRefine)
         if includeRefine {
-          Picker("Refine model", selection: $refineID) {
+          Picker(L10n.string("setup.refine"), selection: $refineID) {
             ForEach(ModelCatalog.refineModels) { option in
               Text("\(option.name) — \(option.detail)").tag(option.id)
             }
@@ -101,7 +101,7 @@ private struct ModelSetupView: View {
 
       HStack {
         Spacer()
-        Button("Download and Continue") {
+        Button(L10n.string("setup.continue")) {
           model.installSelectedModels(
             asrID: asrID,
             includeRefine: model.isInitialModelSetup && includeRefine,
@@ -160,13 +160,19 @@ private struct MenuContent: View {
             .makeKeyAndOrderFront(nil)
         }
       } label: {
-        Label("Settings…", systemImage: "gear")
+        Label(L10n.string("menu.settings"), systemImage: "gear")
       }
-      Button("Reload models") {
+      Button {
         model.reloadModels()
+      } label: {
+        Label(L10n.string("menu.reload"), systemImage: "arrow.clockwise")
       }
       Divider()
-      Button("Quit Shuo") { NSApplication.shared.terminate(nil) }
+      Button {
+        NSApplication.shared.terminate(nil)
+      } label: {
+        Label(L10n.string("menu.quit"), systemImage: "power")
+      }
     }
     .padding(16)
     .frame(width: 290)
@@ -175,9 +181,9 @@ private struct MenuContent: View {
   private var shortcutHelp: String {
     switch model.settings.hotkeyMode {
     case .hold:
-      "Hold \(model.settings.hotkeyShortcut.label) to speak. Release to type."
+      L10n.format("menu.holdHelp", model.settings.hotkeyShortcut.label)
     case .toggle:
-      "Press \(model.settings.hotkeyShortcut.label) to start. Press again to type."
+      L10n.format("menu.toggleHelp", model.settings.hotkeyShortcut.label)
     }
   }
 }
@@ -194,9 +200,9 @@ private struct SettingsView: View {
 
   var body: some View {
     Form {
-      Section("Models") {
+      Section(L10n.string("settings.models")) {
         ModelList(
-          title: "Transcription",
+          title: L10n.string("settings.transcription"),
           options: ModelCatalog.asrModels,
           status: model.asrModelStatus
         ) { option in
@@ -209,7 +215,7 @@ private struct SettingsView: View {
           model.selectASRModel(option.id)
         }
         ModelList(
-          title: "Refine",
+          title: L10n.string("settings.refine"),
           options: ModelCatalog.refineModels,
           status: model.refineModelStatus
         ) { option in
@@ -222,7 +228,7 @@ private struct SettingsView: View {
           model.selectRefineModel(option.id)
         }
         Toggle(
-          "Refine every transcription",
+          L10n.string("settings.refineEvery"),
           isOn: Binding(
             get: { settings.refineEnabled },
             set: { model.setRefineEnabled($0) }
@@ -230,29 +236,33 @@ private struct SettingsView: View {
         )
         .disabled(!model.canEnableRefine)
         if !model.canEnableRefine {
-          Text("Download and activate a Refine model to enable this option.")
+          Text(L10n.string("settings.refineUnavailable"))
             .font(.caption)
             .foregroundStyle(.secondary)
         }
       }
 
-      Section("Refine prompt") {
+      Section(L10n.string("settings.refinePrompt")) {
         TextEditor(text: $settings.refinePrompt)
           .font(.system(.body, design: .monospaced))
           .frame(height: 145)
       }
 
-      Section("Shortcut") {
-        LabeledContent("Key") {
+      Section(L10n.string("settings.shortcut")) {
+        LabeledContent(L10n.string("settings.key")) {
           HStack {
             Text(
               model.isRecordingShortcut
-                ? "Press shortcut…"
+                ? L10n.string("settings.pressShortcut")
                 : settings.hotkeyShortcut.label
             )
             .font(.system(.body, design: .rounded))
             .foregroundStyle(model.isRecordingShortcut ? .orange : .primary)
-            Button(model.isRecordingShortcut ? "Cancel" : "Record Shortcut") {
+            Button(
+              model.isRecordingShortcut
+                ? L10n.string("settings.cancel")
+                : L10n.string("settings.recordShortcut")
+            ) {
               if model.isRecordingShortcut {
                 model.cancelShortcutRecording()
               } else {
@@ -261,16 +271,16 @@ private struct SettingsView: View {
             }
           }
         }
-        Picker("Behavior", selection: $settings.hotkeyMode) {
+        Picker(L10n.string("settings.behavior"), selection: $settings.hotkeyMode) {
           ForEach(HotkeyMode.allCases) { mode in
             Text(mode.label).tag(mode)
           }
         }
       }
 
-      Section("System") {
+      Section(L10n.string("settings.system")) {
         Toggle(
-          "Launch at login",
+          L10n.string("settings.launchAtLogin"),
           isOn: Binding(
             get: { settings.launchAtLogin },
             set: {
@@ -278,15 +288,16 @@ private struct SettingsView: View {
               model.applyLaunchAtLogin()
             }
           ))
-        PermissionRow("Microphone", granted: model.microphoneGranted)
-        PermissionRow("Accessibility", granted: model.accessibilityGranted)
-        PermissionRow("Input Monitoring", granted: model.inputMonitoringGranted)
+        PermissionRow(L10n.string("settings.microphone"), granted: model.microphoneGranted)
+        PermissionRow(L10n.string("settings.accessibility"), granted: model.accessibilityGranted)
+        PermissionRow(
+          L10n.string("settings.inputMonitoring"), granted: model.inputMonitoringGranted)
       }
 
       HStack {
-        Button("Refresh permissions") { model.refreshPermissions() }
+        Button(L10n.string("settings.refreshPermissions")) { model.refreshPermissions() }
         Spacer()
-        Button("Apply and reload models") {
+        Button(L10n.string("settings.applyReload")) {
           model.reloadModels()
         }
         .buttonStyle(.borderedProminent)
@@ -296,14 +307,14 @@ private struct SettingsView: View {
     .padding()
     .frame(width: 560, height: 560)
     .alert(
-      "Delete downloaded model?",
+      L10n.string("delete.title"),
       isPresented: Binding(
         get: { pendingModelDeletion != nil },
         set: { if !$0 { pendingModelDeletion = nil } }
       ),
       presenting: pendingModelDeletion
     ) { candidate in
-      Button("Delete", role: .destructive) {
+      Button(L10n.string("delete.action"), role: .destructive) {
         switch candidate.kind {
         case .transcription:
           model.deleteASRModel(candidate.id)
@@ -312,11 +323,11 @@ private struct SettingsView: View {
         }
         pendingModelDeletion = nil
       }
-      Button("Cancel", role: .cancel) {
+      Button(L10n.string("delete.cancel"), role: .cancel) {
         pendingModelDeletion = nil
       }
     } message: { candidate in
-      Text("This removes \(candidate.name) from this Mac. You can download it again later.")
+      Text(L10n.format("delete.message", candidate.name))
     }
   }
 }
@@ -406,7 +417,7 @@ private struct ModelRow: View {
             .foregroundStyle(.secondary)
         }
         .buttonStyle(.borderless)
-        .help("Delete downloaded model")
+        .help(L10n.string("delete.help"))
       }
     }
     .padding(.vertical, 3)
@@ -430,12 +441,12 @@ private struct ModelRow: View {
 extension ModelStatus {
   fileprivate var label: String {
     switch self {
-    case .active: "Active"
-    case .downloaded: "Downloaded"
-    case .downloadRequired: "Download required"
-    case .downloading: "Downloading…"
-    case .activating: "Activating…"
-    case .deleting: "Deleting…"
+    case .active: L10n.string("model.active")
+    case .downloaded: L10n.string("model.downloaded")
+    case .downloadRequired: L10n.string("model.downloadRequired")
+    case .downloading: L10n.string("model.downloading")
+    case .activating: L10n.string("model.activating")
+    case .deleting: L10n.string("model.deleting")
     }
   }
 }
@@ -480,7 +491,7 @@ private struct PermissionRow: View {
   var body: some View {
     LabeledContent(title) {
       Label(
-        granted ? "Granted" : "Required",
+        granted ? L10n.string("permission.granted") : L10n.string("permission.required"),
         systemImage: granted ? "checkmark.circle.fill" : "exclamationmark.circle"
       )
       .foregroundStyle(granted ? .green : .orange)

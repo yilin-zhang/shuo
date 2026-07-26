@@ -7,9 +7,9 @@ enum RefineOutcome: Equatable {
 
   var label: String {
     switch self {
-    case .applied: "Refine applied"
-    case .unchanged: "No changes"
-    case .rejected: "Refine skipped"
+    case .applied: L10n.string("refine.applied")
+    case .unchanged: L10n.string("refine.unchanged")
+    case .rejected: L10n.string("refine.skipped")
     }
   }
 
@@ -34,13 +34,13 @@ enum ShuoState: Equatable {
 
   var label: String {
     switch self {
-    case .disabled: "Disabled"
-    case .loading(let item): "Loading \(item)…"
-    case .idle: "Ready"
-    case .listening: "Listening…"
-    case .transcribing: "Transcribing…"
-    case .refining: "Refining…"
-    case .outputting: "Typing…"
+    case .disabled: L10n.string("state.disabled")
+    case .loading(let item): L10n.format("state.loading", item)
+    case .idle: L10n.string("state.ready")
+    case .listening: L10n.string("state.listening")
+    case .transcribing: L10n.string("state.transcribing")
+    case .refining: L10n.string("state.refining")
+    case .outputting: L10n.string("state.typing")
     case .error(let message): message
     }
   }

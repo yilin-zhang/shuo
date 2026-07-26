@@ -150,6 +150,6 @@ enum RefineError: LocalizedError {
   case modelNotLoaded
 
   var errorDescription: String? {
-    "The refine model is still loading."
+    L10n.string("error.refineLoading")
   }
 }

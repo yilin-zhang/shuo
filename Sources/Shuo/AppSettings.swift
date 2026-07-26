@@ -10,8 +10,8 @@ enum HotkeyMode: String, CaseIterable, Identifiable {
 
   var label: String {
     switch self {
-    case .hold: "Hold to speak"
-    case .toggle: "Press to start, press again to stop"
+    case .hold: L10n.string("mode.hold")
+    case .toggle: L10n.string("mode.toggle")
     }
   }
 }
@@ -42,22 +42,22 @@ enum ModelCatalog {
     ModelOption(
       id: "mlx-community/Qwen3-0.6B-4bit",
       name: "Qwen3 0.6B 4-bit",
-      detail: "Fast, 335 MB"
+      detail: L10n.string("model.fast")
     ),
     ModelOption(
       id: "mlx-community/Qwen3-1.7B-4bit",
       name: "Qwen3 1.7B 4-bit",
-      detail: "More reliable, slower"
+      detail: L10n.string("model.reliable")
     ),
     ModelOption(
       id: "mlx-community/Qwen3-4B-4bit",
       name: "Qwen3 4B 4-bit",
-      detail: "Higher quality, more memory"
+      detail: L10n.string("model.quality")
     ),
     ModelOption(
       id: "mlx-community/Qwen3-8B-4bit",
       name: "Qwen3 8B 4-bit",
-      detail: "Highest quality, slowest"
+      detail: L10n.string("model.highest")
     ),
   ]
 

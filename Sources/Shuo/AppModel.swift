@@ -45,7 +45,9 @@ struct ModelStartupPlan: Equatable {
 
 @MainActor
 final class AppModel: ObservableObject {
-  @Published private(set) var state: ShuoState = .loading("transcription model")
+  @Published private(set) var state: ShuoState = .loading(
+    L10n.string("loading.transcription")
+  )
   @Published private(set) var microphoneGranted = false
   @Published private(set) var accessibilityGranted = false
   @Published private(set) var inputMonitoringGranted = false
@@ -311,7 +313,7 @@ final class AppModel: ObservableObject {
 
   private func loadASR(_ id: String) async throws {
     loadingModel = id
-    transition(to: .loading("transcription model"))
+    transition(to: .loading(L10n.string("loading.transcription")))
     try await asr.load(modelID: id)
     try Task.checkCancellation()
     activeASRModel = id
@@ -320,7 +322,7 @@ final class AppModel: ObservableObject {
 
   private func loadRefiner(_ id: String) async throws {
     loadingModel = id
-    transition(to: .loading("refine model"))
+    transition(to: .loading(L10n.string("loading.refine")))
     try await refiner.load(modelID: id)
     try Task.checkCancellation()
     activeRefineModel = id

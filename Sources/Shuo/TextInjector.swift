@@ -47,9 +47,9 @@ enum TextInjectionError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .accessibilityPermissionMissing:
-      "Enable Accessibility permission for Shuo."
+      L10n.string("error.accessibility")
     case .eventCreationFailed:
-      "Shuo could not create a text input event."
+      L10n.string("error.textEvent")
     }
   }
 }

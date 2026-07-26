@@ -30,16 +30,16 @@ struct HotkeyShortcut: Codable, Equatable {
 
   private static func modifierName(for keyCode: Int64) -> String {
     switch keyCode {
-    case 54: "Right Command (⌘)"
-    case 55: "Left Command (⌘)"
-    case 56: "Left Shift (⇧)"
-    case 58: "Left Option (⌥)"
-    case 59: "Left Control (⌃)"
-    case 60: "Right Shift (⇧)"
-    case 61: "Right Option (⌥)"
-    case 62: "Right Control (⌃)"
+    case 54: L10n.string("key.rightCommand")
+    case 55: L10n.string("key.leftCommand")
+    case 56: L10n.string("key.leftShift")
+    case 58: L10n.string("key.leftOption")
+    case 59: L10n.string("key.leftControl")
+    case 60: L10n.string("key.rightShift")
+    case 61: L10n.string("key.rightOption")
+    case 62: L10n.string("key.rightControl")
     case 63: "Fn"
-    default: "Key \(keyCode)"
+    default: L10n.format("key.unknown", keyCode)
     }
   }
 
@@ -51,13 +51,13 @@ struct HotkeyShortcut: Codable, Equatable {
       23: "5", 24: "=", 25: "9", 26: "7", 27: "-", 28: "8", 29: "0",
       30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P", 36: "↩",
       37: "L", 38: "J", 39: "'", 40: "K", 41: ";", 42: "\\", 43: ",",
-      44: "/", 45: "N", 46: "M", 47: ".", 48: "⇥", 49: "Space",
+      44: "/", 45: "N", 46: "M", 47: ".", 48: "⇥", 49: L10n.string("key.space"),
       50: "`", 51: "⌫", 53: "Esc", 96: "F5", 97: "F6", 98: "F7",
       99: "F3", 100: "F8", 101: "F9", 103: "F11", 109: "F10",
       111: "F12", 118: "F4", 120: "F2", 122: "F1", 123: "←",
       124: "→", 125: "↓", 126: "↑",
     ]
-    return names[keyCode] ?? "Key \(keyCode)"
+    return names[keyCode] ?? L10n.format("key.unknown", keyCode)
   }
 }
 
@@ -205,6 +205,6 @@ enum HotkeyError: LocalizedError {
   case couldNotCreateEventTap
 
   var errorDescription: String? {
-    "Shuo could not monitor the shortcut key. Enable Input Monitoring for Shuo."
+    L10n.string("error.inputMonitoring")
   }
 }
