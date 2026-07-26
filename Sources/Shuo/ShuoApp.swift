@@ -142,6 +142,7 @@ private struct MenuContent: View {
           )
         )
         .labelsHidden()
+        .toggleStyle(.switch)
         .disabled(!model.canEnableApp)
       }
 
