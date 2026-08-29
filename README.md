@@ -10,6 +10,8 @@ A private, native macOS push-to-talk dictation app. Hold the right Option key,
 speak, and release to type the local transcription into the focused app.
 
 - Choose WhisperKit or Qwen3-ASR; both run entirely on the Mac.
+- Qwen3-ASR shows a live floating transcript using local agreement and its
+  companion forced-alignment model. Live transcription can be disabled in Settings.
 - Optional Qwen3 refinement runs with MLX on the Mac.
 - Qwen3-ASR can use an optional one-term-per-line terminology list during
   decoding. Terminology can improve specialist vocabulary, but may over-correct

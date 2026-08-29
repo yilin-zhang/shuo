@@ -6,6 +6,25 @@ import Testing
 
 private let qwenIntegrationEnabled =
   ProcessInfo.processInfo.environment["SHUO_RUN_QWEN_INTEGRATION"] == "1"
+private let qwenAlignerIntegrationEnabled =
+  ProcessInfo.processInfo.environment["SHUO_RUN_QWEN_ALIGNER_INTEGRATION"] == "1"
+
+@Test(.enabled(if: qwenAlignerIntegrationEnabled))
+@MainActor
+func qwenStreamingCompanionModelDownloadsAndActivates() async throws {
+  let engine = NativeASREngine()
+  try await engine.load(
+    modelID: ASRBackend.qwenModelID,
+    streamingEnabled: true
+  )
+
+  #expect(
+    NativeASREngine.isReady(
+      modelID: ASRBackend.qwenModelID,
+      streamingEnabled: true
+    )
+  )
+}
 
 @Test(.enabled(if: qwenIntegrationEnabled))
 @MainActor

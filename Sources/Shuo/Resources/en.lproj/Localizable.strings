@@ -20,6 +20,7 @@
 "error.asrLoading" = "The transcription model is still loading.";
 "error.tooShort" = "The recording was too short.";
 "error.noSpeech" = "No speech was detected.";
+"error.audioUnavailable" = "The microphone audio stream is unavailable.";
 "error.refineLoading" = "The refine model is still loading.";
 "error.inputMonitoring" = "Shuo could not monitor the shortcut key. Enable Input Monitoring for Shuo.";
 "error.accessibility" = "Enable Accessibility permission for Shuo.";
@@ -41,6 +42,9 @@
 "settings.refine" = "Refine";
 "settings.refineEvery" = "Refine every transcription";
 "settings.refineUnavailable" = "Download and activate a Refine model to enable this option.";
+"settings.streaming" = "Live transcription";
+"settings.streamingEnabled" = "Show live transcript while recording";
+"settings.streamingHelp" = "Qwen confirms stable text as audio arrives. Its companion alignment model is downloaded automatically.";
 "settings.refinePrompt" = "Refine prompt";
 "settings.transcriptionTerms" = "Transcription terminology";
 "settings.transcriptionTermsHelp" = "Enter one term per line. Qwen uses these terms while decoding, which can improve specialist vocabulary but may over-correct similar-sounding words.";

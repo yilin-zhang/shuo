@@ -115,6 +115,10 @@ final class AppModel: ObservableObject {
   private var hotkey: HotkeyMonitor!
   private var modelTask: Task<Void, Never>?
   private var errorResetTask: Task<Void, Never>?
+  private var streamingPresentation = StreamingTranscriptPresentation()
+  private var streamingStableText = ""
+  private var streamingRefinedInput = ""
+  private var streamingRefineTask: Task<Void, Never>?
 
   init() {
     hotkey = HotkeyMonitor(shortcut: settings.hotkeyShortcut) {
@@ -265,6 +269,17 @@ final class AppModel: ObservableObject {
     transition(to: settings.enabled ? .idle : .disabled)
   }
 
+  func setStreamingEnabled(_ enabled: Bool) {
+    guard !state.isDictating, !isManagingModels else { return }
+    guard settings.streamingEnabled != enabled else { return }
+    settings.streamingEnabled = enabled
+    if enabled, ASRBackend.resolve(modelID: settings.asrModel) == .qwen3 {
+      reloadModels()
+    } else if !enabled {
+      asr.setStreamingEnabled(false)
+    }
+  }
+
   func asrModelStatus(_ id: String) -> ModelStatus {
     modelStatus(
       id: id,
@@ -343,6 +358,7 @@ final class AppModel: ObservableObject {
     settings.enabled = enabled
     if !enabled, state == .listening {
       asr.stopRecording()
+      resetStreamingTranscript()
       transition(to: .disabled)
     } else if !state.isBusy {
       transition(to: enabled ? .idle : .disabled)
@@ -383,11 +399,18 @@ final class AppModel: ObservableObject {
       token: token,
       kind: .transcription,
       id: id,
-      event: downloadedASRModels.contains(id) ? .activating : .downloading(0)
+      event: NativeASREngine.isReady(
+        modelID: id,
+        streamingEnabled: settings.streamingEnabled
+      ) ? .activating : .downloading(0)
     )
     transition(to: .loading(L10n.string("loading.transcription")))
     let relay = makeEventRelay(token: token, kind: .transcription, id: id)
-    try await asr.load(modelID: id, eventHandler: relay.send)
+    try await asr.load(
+      modelID: id,
+      streamingEnabled: settings.streamingEnabled,
+      eventHandler: relay.send
+    )
     try Task.checkCancellation()
     guard modelOperation?.token == token else { throw CancellationError() }
     activeASRModel = id
@@ -519,8 +542,20 @@ final class AppModel: ObservableObject {
   private func startRecordingIfPossible() {
     guard state == .idle else { return }
     do {
-      try asr.startRecording()
+      if usesQwenStreaming {
+        resetStreamingTranscript()
+        try asr.startStreaming(
+          context: settings.transcriptionContext
+        ) { [weak self] update in
+          self?.handleStreamingUpdate(update)
+        }
+      } else {
+        try asr.startRecording()
+      }
       transition(to: .listening)
+      if usesQwenStreaming {
+        overlay.showTranscript("")
+      }
     } catch {
       showError(error)
     }
@@ -528,8 +563,87 @@ final class AppModel: ObservableObject {
 
   private func stopRecordingIfNeeded() {
     guard state == .listening else { return }
+    if usesQwenStreaming {
+      overlay.hideTranscript()
+      transition(to: .transcribing)
+      Task { await finishStreamingDictation() }
+      return
+    }
     let audio = asr.stopRecording()
     Task { await process(audio) }
+  }
+
+  private var usesQwenStreaming: Bool {
+    settings.streamingEnabled
+      && ASRBackend.resolve(modelID: settings.asrModel) == .qwen3
+  }
+
+  private func resetStreamingTranscript() {
+    streamingRefineTask?.cancel()
+    streamingRefineTask = nil
+    streamingPresentation = StreamingTranscriptPresentation()
+    streamingStableText = ""
+    streamingRefinedInput = ""
+    overlay.hideTranscript()
+  }
+
+  private func handleStreamingUpdate(_ update: QwenStreamingUpdate) {
+    streamingStableText = update.stableText
+    streamingPresentation.update(stable: update.stableText, preview: update.previewText)
+    if state == .listening {
+      overlay.showTranscript(streamingPresentation.displayText)
+    }
+    scheduleStreamingRefine()
+  }
+
+  private func scheduleStreamingRefine() {
+    guard settings.refineEnabled, !streamingStableText.isEmpty else { return }
+    guard streamingRefinedInput != streamingStableText else { return }
+    guard streamingRefineTask == nil else { return }
+    streamingRefineTask = Task { [weak self] in
+      guard let self else { return }
+      while !Task.isCancelled, streamingRefinedInput != streamingStableText {
+        let input = streamingStableText
+        do {
+          let result = try await refiner.refine(input, prompt: settings.refinePrompt)
+          guard !Task.isCancelled else { return }
+          streamingPresentation.applyRefinement(result.text, for: input)
+          streamingRefinedInput = input
+          if state == .listening {
+            overlay.showTranscript(streamingPresentation.displayText)
+          }
+        } catch {
+          guard !Task.isCancelled else { return }
+          streamingRefinedInput = input
+        }
+      }
+      streamingRefineTask = nil
+    }
+  }
+
+  private func finishStreamingDictation() async {
+    do {
+      let rawText = try await asr.finishStreaming()
+      if streamingStableText != rawText {
+        handleStreamingUpdate(
+          QwenStreamingUpdate(stableText: rawText, previewText: rawText)
+        )
+      }
+      scheduleStreamingRefine()
+      while let task = streamingRefineTask {
+        await task.value
+      }
+      let text = streamingPresentation.displayText
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !text.isEmpty else { throw ASRError.noSpeechDetected }
+      transition(to: .outputting)
+      try TextInjector.type(text)
+      resetStreamingTranscript()
+      transition(to: settings.enabled ? .idle : .disabled)
+    } catch {
+      resetStreamingTranscript()
+      showError(error)
+    }
   }
 
   private func process(_ audio: [Float]) async {
@@ -559,6 +673,7 @@ final class AppModel: ObservableObject {
 
   private func showError(_ error: Error) {
     asr.stopRecording()
+    overlay.hideTranscript()
     transition(to: .error(error.localizedDescription))
     errorResetTask?.cancel()
     errorResetTask = Task { [weak self] in

@@ -20,6 +20,7 @@
 "error.asrLoading" = "转写模型仍在加载。";
 "error.tooShort" = "录音时间太短。";
 "error.noSpeech" = "未检测到语音。";
+"error.audioUnavailable" = "麦克风音频流不可用。";
 "error.refineLoading" = "润色模型仍在加载。";
 "error.inputMonitoring" = "Shuo 无法监听快捷键，请为 Shuo 开启输入监控权限。";
 "error.accessibility" = "请为 Shuo 开启辅助功能权限。";
@@ -41,6 +42,9 @@
 "settings.refine" = "润色";
 "settings.refineEvery" = "每次转写后润色";
 "settings.refineUnavailable" = "请先下载并激活一个润色模型。";
+"settings.streaming" = "实时转写";
+"settings.streamingEnabled" = "录音时显示实时字幕";
+"settings.streamingHelp" = "Qwen 会随音频确认稳定文字，并自动下载配套的对齐模型。";
 "settings.refinePrompt" = "润色提示词";
 "settings.transcriptionTerms" = "转写术语";
 "settings.transcriptionTermsHelp" = "每行输入一个术语。Qwen 会在解码时参考这些术语，可改善专业词汇识别，但也可能过度纠正发音相近的词。";

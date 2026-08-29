@@ -157,6 +157,7 @@ final class AppSettings: ObservableObject {
     static let hotkeyKey = "hotkeyKey"
     static let hotkeyMode = "hotkeyMode"
     static let completedInitialSetup = "completedInitialSetup"
+    static let streamingEnabled = "streamingEnabled"
   }
 
   @Published var enabled: Bool {
@@ -165,6 +166,10 @@ final class AppSettings: ObservableObject {
 
   @Published var refineEnabled: Bool {
     didSet { defaults.set(refineEnabled, forKey: Key.refineEnabled) }
+  }
+
+  @Published var streamingEnabled: Bool {
+    didSet { defaults.set(streamingEnabled, forKey: Key.streamingEnabled) }
   }
 
   @Published var launchAtLogin: Bool {
@@ -218,6 +223,7 @@ final class AppSettings: ObservableObject {
     defaults.register(defaults: [
       Key.enabled: true,
       Key.refineEnabled: true,
+      Key.streamingEnabled: true,
       Key.launchAtLogin: false,
       Key.asrModel: ModelCatalog.asrModels[0].id,
       Key.refineModel: ModelCatalog.defaultRefineModelID,
@@ -227,6 +233,7 @@ final class AppSettings: ObservableObject {
     ])
     enabled = defaults.bool(forKey: Key.enabled)
     refineEnabled = defaults.bool(forKey: Key.refineEnabled)
+    streamingEnabled = defaults.bool(forKey: Key.streamingEnabled)
     launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
     asrModel = defaults.string(forKey: Key.asrModel) ?? ModelCatalog.asrModels[0].id
     refineModel =
