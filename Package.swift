@@ -7,13 +7,10 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "Shuo", targets: ["Shuo"])
+        .executable(name: "Shuo", targets: ["Shuo"]),
+        .library(name: "QwenStreaming", targets: ["QwenStreaming"])
     ],
     dependencies: [
-        .package(
-            url: "https://github.com/argmaxinc/argmax-oss-swift.git",
-            exact: "1.0.0"
-        ),
         .package(
             url: "https://github.com/ml-explore/mlx-swift-lm.git",
             exact: "3.31.4"
@@ -32,10 +29,17 @@ let package = Package(
         ),
     ],
     targets: [
+        .target(
+            name: "QwenStreaming",
+            dependencies: [
+                .product(name: "MLXAudioSTT", package: "mlx-audio-swift")
+            ]
+        ),
+        .testTarget(name: "QwenStreamingTests", dependencies: ["QwenStreaming"]),
         .executableTarget(
             name: "Shuo",
             dependencies: [
-                .product(name: "WhisperKit", package: "argmax-oss-swift"),
+                "QwenStreaming",
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "MLXHuggingFace", package: "mlx-swift-lm"),

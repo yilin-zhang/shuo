@@ -15,7 +15,7 @@ BIN_DIR=$(/usr/bin/xcrun swift build --disable-sandbox -c release --show-bin-pat
 /bin/rm -rf "$ICON_BUILD_DIR"
 /bin/mkdir -p "$CONTENTS_DIR/MacOS/Resources" "$CONTENTS_DIR/Resources"
 /bin/mkdir -p "$ICON_BUILD_DIR"
-/Applications/Xcode.app/Contents/Developer/usr/bin/actool \
+/usr/bin/actool \
     "$PROJECT_DIR/Resources/AppIcon.icon" \
     --compile "$ICON_BUILD_DIR" \
     --output-format human-readable-text \

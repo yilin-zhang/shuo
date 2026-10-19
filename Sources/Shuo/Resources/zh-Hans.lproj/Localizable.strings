@@ -44,7 +44,7 @@
 "settings.refineUnavailable" = "请先下载并激活一个润色模型。";
 "settings.streaming" = "实时转写";
 "settings.streamingEnabled" = "录音时显示实时字幕";
-"settings.streamingHelp" = "Qwen 会随音频确认稳定文字，并自动下载配套的对齐模型。";
+"settings.streamingHelp" = "录音时持续更新字幕，结束后生成最终文本。开启润色时，会在转写完成后润色。";
 "settings.refinePrompt" = "润色提示词";
 "settings.transcriptionTerms" = "转写术语";
 "settings.transcriptionTermsHelp" = "每行输入一个术语。Qwen 会在解码时参考这些术语，可改善专业词汇识别，但也可能过度纠正发音相近的词。";

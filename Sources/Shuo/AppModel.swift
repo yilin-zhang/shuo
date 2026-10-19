@@ -273,9 +273,9 @@ final class AppModel: ObservableObject {
     guard !state.isDictating, !isManagingModels else { return }
     guard settings.streamingEnabled != enabled else { return }
     settings.streamingEnabled = enabled
-    if enabled, ASRBackend.resolve(modelID: settings.asrModel) == .qwen3 {
+    if enabled {
       reloadModels()
-    } else if !enabled {
+    } else {
       asr.setStreamingEnabled(false)
     }
   }
@@ -575,7 +575,6 @@ final class AppModel: ObservableObject {
 
   private var usesQwenStreaming: Bool {
     settings.streamingEnabled
-      && ASRBackend.resolve(modelID: settings.asrModel) == .qwen3
   }
 
   private func resetStreamingTranscript() {

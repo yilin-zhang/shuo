@@ -66,39 +66,28 @@ final class NativeAudioCapture: @unchecked Sendable {
   }
 
   private func consume(_ input: AVAudioPCMBuffer, outputFormat: AVAudioFormat) {
-    lock.lock()
-    guard let converter, engine != nil else {
-      lock.unlock()
-      return
+    // Serialize conversion and sample commit with stop(), so the final snapshot
+    // cannot lose a buffer that was already being converted.
+    let delivery = lock.withLock { () -> ([Float], (@Sendable ([Float]) -> Void)?)? in
+      guard let converter, engine != nil else { return nil }
+      let ratio = outputFormat.sampleRate / input.format.sampleRate
+      let capacity = AVAudioFrameCount(ceil(Double(input.frameLength) * ratio)) + 16
+      guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
+        return nil
+      }
+      let provider = AudioInputProvider(input)
+      var conversionError: NSError?
+      let status = converter.convert(to: output, error: &conversionError) { _, state in
+        provider.next(state: state)
+      }
+      guard status != .error, conversionError == nil, let channel = output.floatChannelData?[0]
+      else { return nil }
+      let chunk = Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
+      guard !chunk.isEmpty else { return nil }
+      samples.append(contentsOf: chunk)
+      return (chunk, bufferHandler)
     }
-    lock.unlock()
-
-    let ratio = outputFormat.sampleRate / input.format.sampleRate
-    let capacity = AVAudioFrameCount(ceil(Double(input.frameLength) * ratio)) + 16
-    guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
-      return
-    }
-
-    let provider = AudioInputProvider(input)
-    var conversionError: NSError?
-    let status = converter.convert(to: output, error: &conversionError) { _, state in
-      provider.next(state: state)
-    }
-    guard status != .error, conversionError == nil, let channel = output.floatChannelData?[0]
-    else { return }
-
-    let chunk = Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
-    guard !chunk.isEmpty else { return }
-
-    lock.lock()
-    guard engine != nil else {
-      lock.unlock()
-      return
-    }
-    samples.append(contentsOf: chunk)
-    let handler = bufferHandler
-    lock.unlock()
-    handler?(chunk)
+    if let (chunk, handler) = delivery { handler?(chunk) }
   }
 }
 

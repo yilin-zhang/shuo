@@ -274,27 +274,25 @@ private struct SettingsView: View {
         }
       }
 
-      if ASRBackend.resolve(modelID: settings.asrModel) == .qwen3 {
-        Section(L10n.string("settings.streaming")) {
-          Toggle(
-            L10n.string("settings.streamingEnabled"),
-            isOn: Binding(
-              get: { settings.streamingEnabled },
-              set: { model.setStreamingEnabled($0) }
-            )
+      Section(L10n.string("settings.streaming")) {
+        Toggle(
+          L10n.string("settings.streamingEnabled"),
+          isOn: Binding(
+            get: { settings.streamingEnabled },
+            set: { model.setStreamingEnabled($0) }
           )
-          .disabled(model.modelInteractionsDisabled)
-          Text(L10n.string("settings.streamingHelp"))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+        )
+        .disabled(model.modelInteractionsDisabled)
+        Text(L10n.string("settings.streamingHelp"))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
 
-        Section(L10n.string("settings.transcriptionTerms")) {
-          TerminologyEditor(terms: $settings.transcriptionTerms)
-          Text(L10n.string("settings.transcriptionTermsHelp"))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+      Section(L10n.string("settings.transcriptionTerms")) {
+        TerminologyEditor(terms: $settings.transcriptionTerms)
+        Text(L10n.string("settings.transcriptionTermsHelp"))
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
 
       Section(L10n.string("settings.refinePrompt")) {
@@ -376,7 +374,7 @@ private struct SettingsView: View {
     .padding()
     .frame(
       width: 560,
-      height: ASRBackend.resolve(modelID: settings.asrModel) == .qwen3 ? 760 : 560
+      height: 760
     )
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
     {

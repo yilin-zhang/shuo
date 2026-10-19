@@ -11,16 +11,16 @@ private let qwenAlignerIntegrationEnabled =
 
 @Test(.enabled(if: qwenAlignerIntegrationEnabled))
 @MainActor
-func qwenStreamingCompanionModelDownloadsAndActivates() async throws {
+func qwenStreamingUsesASRModelWithoutCompanion() async throws {
   let engine = NativeASREngine()
   try await engine.load(
-    modelID: ASRBackend.qwenModelID,
+    modelID: NativeASREngine.defaultModelID,
     streamingEnabled: true
   )
 
   #expect(
     NativeASREngine.isReady(
-      modelID: ASRBackend.qwenModelID,
+      modelID: NativeASREngine.defaultModelID,
       streamingEnabled: true
     )
   )
@@ -35,7 +35,7 @@ func qwenTranscribesWithModelContextWhenIntegrationFixtureIsAvailable() async th
   let expectedText = try #require(environment["SHUO_QWEN_EXPECTED_TEXT"])
 
   let engine = NativeASREngine()
-  try await engine.load(modelID: ASRBackend.qwenModelID)
+  try await engine.load(modelID: NativeASREngine.defaultModelID)
   let text = try await engine.transcribe(
     try loadMonoFloatAudio(URL(fileURLWithPath: audioPath)),
     context: terminology

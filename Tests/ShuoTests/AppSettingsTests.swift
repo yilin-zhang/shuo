@@ -23,7 +23,7 @@ func settingsPreservePushToTalkAndSetupDefaults() {
     #expect(settings.hotkeyShortcut == .rightOption)
     #expect(settings.hotkeyMode == .hold)
     #expect(settings.streamingEnabled)
-    #expect(settings.asrModel == ASRBackend.qwenModelID)
+    #expect(settings.asrModel == NativeASREngine.defaultModelID)
     #expect(settings.refineModel == ModelCatalog.defaultRefineModelID)
     #expect(!settings.hasCompletedInitialSetup)
     settings.hasCompletedInitialSetup = true

@@ -3,29 +3,17 @@ import HuggingFace
 import MLX
 import MLXAudioCore
 import MLXAudioSTT
-import WhisperKit
-
-enum ASRBackend: Equatable {
-  case whisper
-  case qwen3
-
-  static let qwenModelID = "mlx-community/Qwen3-ASR-0.6B-4bit"
-
-  static func resolve(modelID: String) -> Self {
-    modelID == qwenModelID ? .qwen3 : .whisper
-  }
-}
 
 @MainActor
 final class NativeASREngine {
+  nonisolated static let defaultModelID = "mlx-community/Qwen3-ASR-1.7B-4bit"
   nonisolated static let qwenAlignerModelID =
     "mlx-community/Qwen3-ForcedAligner-0.6B-4bit"
 
-  private let audioProcessor = AudioProcessor()
-  private let streamingAudioCapture = NativeAudioCapture()
-  private var whisper: WhisperKit?
+  private let audioCapture = NativeAudioCapture()
   private var qwen: Qwen3ASRModel?
-  private var qwenAligner: Qwen3ForcedAlignerModel?
+  private var audioDeliveryTask: Task<Void, Never>?
+  private var audioDelivery: AsyncStream<[Float]>.Continuation?
   private var streamingEngine: QwenStreamingEngine?
   private var loadedModelID: String?
 
@@ -36,51 +24,23 @@ final class NativeASREngine {
   ) async throws {
     let isLoaded =
       loadedModelID == modelID
-      && (ASRBackend.resolve(modelID: modelID) == .whisper
-        ? whisper != nil
-        : qwen != nil && (!streamingEnabled || qwenAligner != nil))
+      && qwen != nil
     guard !isLoaded else { return }
     stopRecording()
-
-    switch ASRBackend.resolve(modelID: modelID) {
-    case .whisper:
-      try await loadWhisper(modelID: modelID, eventHandler: eventHandler)
-    case .qwen3:
-      try await loadQwen(
-        modelID: modelID,
-        streamingEnabled: streamingEnabled,
-        eventHandler: eventHandler
-      )
-    }
+    try await loadQwen(
+      modelID: modelID,
+      streamingEnabled: streamingEnabled,
+      eventHandler: eventHandler
+    )
     loadedModelID = modelID
   }
 
   nonisolated static func isDownloaded(modelID: String) -> Bool {
-    switch ASRBackend.resolve(modelID: modelID) {
-    case .whisper:
-      isCompleteWhisperModelDirectory(whisperModelDirectory(modelID: modelID))
-    case .qwen3:
-      isCompleteQwenModelDirectory(qwenModelDirectory(modelID: modelID))
-    }
+    isCompleteQwenModelDirectory(qwenModelDirectory(modelID: modelID))
   }
 
   nonisolated static func isReady(modelID: String, streamingEnabled: Bool) -> Bool {
-    guard isDownloaded(modelID: modelID) else { return false }
-    return ASRBackend.resolve(modelID: modelID) != .qwen3
-      || !streamingEnabled
-      || isCompleteQwenModelDirectory(qwenModelDirectory(modelID: qwenAlignerModelID))
-  }
-
-  nonisolated static func isCompleteWhisperModelDirectory(_ directory: URL) -> Bool {
-    let requiredPaths = [
-      directory.appending(path: "config.json"),
-      directory.appending(path: "AudioEncoder.mlmodelc/coremldata.bin"),
-      directory.appending(path: "TextDecoder.mlmodelc/coremldata.bin"),
-      directory.appending(path: "MelSpectrogram.mlmodelc/coremldata.bin"),
-    ]
-    return requiredPaths.allSatisfy {
-      FileManager.default.fileExists(atPath: $0.path)
-    }
+    isDownloaded(modelID: modelID)
   }
 
   nonisolated static func isCompleteQwenModelDirectory(_ directory: URL) -> Bool {
@@ -105,15 +65,11 @@ final class NativeASREngine {
   }
 
   nonisolated static func deleteDownloadedModel(modelID: String) throws {
-    let backend = ASRBackend.resolve(modelID: modelID)
-    let directory =
-      backend == .qwen3
-      ? qwenModelDirectory(modelID: modelID)
-      : whisperModelDirectory(modelID: modelID)
+    let directory = qwenModelDirectory(modelID: modelID)
     if FileManager.default.fileExists(atPath: directory.path) {
       try FileManager.default.removeItem(at: directory)
     }
-    if backend == .qwen3, let repoID = Repo.ID(rawValue: modelID) {
+    if let repoID = Repo.ID(rawValue: modelID) {
       let hubDirectory = qwenCache.repoDirectory(repo: repoID, kind: .model)
       if FileManager.default.fileExists(atPath: hubDirectory.path) {
         try FileManager.default.removeItem(at: hubDirectory)
@@ -137,17 +93,9 @@ final class NativeASREngine {
 
   func unload() {
     stopRecording()
-    whisper = nil
     qwen = nil
-    qwenAligner = nil
     streamingEngine = nil
     loadedModelID = nil
-  }
-
-  private nonisolated static func whisperModelDirectory(modelID: String) -> URL {
-    FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: "Documents/huggingface/models/argmaxinc/whisperkit-coreml")
-      .appending(path: "openai_whisper-\(modelID)")
   }
 
   private nonisolated static let qwenCache = HubCache(
@@ -165,110 +113,85 @@ final class NativeASREngine {
 
   func startRecording() throws {
     guard loadedModelID != nil else { throw ASRError.modelNotLoaded }
-    audioProcessor.purgeAudioSamples(keepingLast: 0)
-    try audioProcessor.startRecordingLive(inputDeviceID: nil, callback: nil)
+    try audioCapture.start(bufferHandler: nil)
   }
 
   @discardableResult
   func stopRecording() -> [Float] {
+    audioDelivery?.finish()
+    audioDelivery = nil
+    audioDeliveryTask?.cancel()
+    audioDeliveryTask = nil
     if let streamingEngine {
       streamingEngine.cancel()
       self.streamingEngine = nil
-      return streamingAudioCapture.stop()
+      return audioCapture.stop()
     }
-    audioProcessor.stopRecording()
-    return Array(audioProcessor.audioSamples)
+    return audioCapture.stop()
   }
 
   func startStreaming(
     context: String,
     updateHandler: @escaping QwenStreamingEngine.UpdateHandler
   ) throws {
-    guard let qwen, let qwenAligner else { throw ASRError.modelNotLoaded }
+    guard let qwen else { throw ASRError.modelNotLoaded }
     let engine = QwenStreamingEngine(
       qwen: qwen,
-      aligner: qwenAligner,
       context: context,
       updateHandler: updateHandler
     )
     streamingEngine = engine
-    try streamingAudioCapture.start { [weak engine] samples in
-      Task { @MainActor in engine?.append(samples) }
+    let (stream, delivery) = AsyncStream<[Float]>.makeStream()
+    audioDelivery = delivery
+    audioDeliveryTask = Task { [weak engine] in
+      for await samples in stream {
+        guard !Task.isCancelled else { return }
+        engine?.append(samples)
+      }
+    }
+    do {
+      try audioCapture.start { samples in delivery.yield(samples) }
+    } catch {
+      stopRecording()
+      throw error
     }
   }
 
   func finishStreaming() async throws -> String {
-    streamingAudioCapture.stop()
+    let audio = audioCapture.stop()
+    audioDelivery?.finish()
+    audioDelivery = nil
+    audioDeliveryTask?.cancel()
+    audioDeliveryTask = nil
     guard let streamingEngine else { throw ASRError.modelNotLoaded }
     defer { self.streamingEngine = nil }
-    return try await streamingEngine.finish()
+    return try await streamingEngine.finish(audio: audio)
   }
 
   func setStreamingEnabled(_ enabled: Bool) {
     guard !enabled else { return }
     streamingEngine?.cancel()
     streamingEngine = nil
-    qwenAligner = nil
   }
 
   func transcribe(_ audio: [Float], context: String = "") async throws -> String {
-    guard let loadedModelID else { throw ASRError.modelNotLoaded }
+    guard let qwen else { throw ASRError.modelNotLoaded }
     guard audio.count >= 1_600 else { throw ASRError.recordingTooShort }
     guard Self.rootMeanSquare(audio) > 0.002 else { throw ASRError.noSpeechDetected }
 
-    let text: String
-    switch ASRBackend.resolve(modelID: loadedModelID) {
-    case .whisper:
-      guard let whisper else { throw ASRError.modelNotLoaded }
-      text = try await transcribeWhisper(audio, using: whisper)
-    case .qwen3:
-      guard let qwen else { throw ASRError.modelNotLoaded }
-      let model = UncheckedSendable(value: qwen)
-      let maxTokens = min(1024, max(64, audio.count / 400 + 32))
-      text = await Task.detached(priority: .userInitiated) {
-        model.value.generate(
-          audio: MLXArray(audio),
-          maxTokens: maxTokens,
-          context: context
-        ).text
-      }.value
-    }
+    let model = UncheckedSendable(value: qwen)
+    let maxTokens = min(1024, max(64, audio.count / 400 + 32))
+    let text = await Task.detached(priority: .userInitiated) {
+      model.value.generate(
+        audio: MLXArray(audio),
+        maxTokens: maxTokens,
+        context: context
+      ).text
+    }.value
+
     let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty else { throw ASRError.noSpeechDetected }
     return normalized
-  }
-
-  private func loadWhisper(
-    modelID: String,
-    eventHandler: @Sendable @escaping (ModelLoadEvent) -> Void
-  ) async throws {
-    let modelFolder: URL
-    if Self.isDownloaded(modelID: modelID) {
-      modelFolder = Self.whisperModelDirectory(modelID: modelID)
-    } else {
-      eventHandler(.downloading(0))
-      modelFolder = try await WhisperKit.download(
-        variant: modelID,
-        progressCallback: { progress in
-          eventHandler(.downloading(progress.fractionCompleted))
-        }
-      )
-    }
-    try Task.checkCancellation()
-    eventHandler(.activating)
-    let loaded = try await WhisperKit(
-      WhisperKitConfig(
-        modelFolder: modelFolder.path,
-        verbose: false,
-        prewarm: true,
-        load: true,
-        download: false
-      )
-    )
-    try Task.checkCancellation()
-    qwen = nil
-    qwenAligner = nil
-    whisper = loaded
   }
 
   private func loadQwen(
@@ -280,17 +203,8 @@ final class NativeASREngine {
       throw ASRError.invalidModelID
     }
     let wasDownloaded = Self.isDownloaded(modelID: modelID)
-    let qwenEvents: @Sendable (ModelLoadEvent) -> Void = { event in
-      guard streamingEnabled else {
-        eventHandler(event)
-        return
-      }
-      if case .downloading(let progress) = event {
-        eventHandler(.downloading(progress * 0.5))
-      }
-    }
     if !wasDownloaded {
-      qwenEvents(.downloading(0))
+      eventHandler(.downloading(0))
       let modelDirectory = Self.qwenModelDirectory(modelID: modelID)
       if FileManager.default.fileExists(atPath: modelDirectory.path) {
         try Self.deleteDownloadedModel(modelID: modelID)
@@ -302,75 +216,18 @@ final class NativeASREngine {
       repoID: repoID,
       requiredExtension: "safetensors",
       progressHandler: { progress in
-        qwenEvents(.downloading(progress.fractionCompleted))
-      }
-    )
-    try Task.checkCancellation()
-    qwenEvents(.activating)
-    let loaded = try await Task.detached(priority: .userInitiated) {
-      UncheckedSendable(
-        value: try await Qwen3ASRModel.fromModelDirectory(modelFolder)
-      )
-    }.value.value
-    try Task.checkCancellation()
-    whisper = nil
-    qwen = loaded
-    if streamingEnabled {
-      try await loadQwenAligner { event in
-        switch event {
-        case .downloading(let progress):
-          eventHandler(.downloading(0.5 + progress * 0.5))
-        case .activating:
-          eventHandler(.activating)
-        }
-      }
-    } else {
-      qwenAligner = nil
-    }
-  }
-
-  private func loadQwenAligner(
-    eventHandler: @Sendable @escaping (ModelLoadEvent) -> Void
-  ) async throws {
-    guard qwenAligner == nil else { return }
-    guard let repoID = Repo.ID(rawValue: Self.qwenAlignerModelID) else {
-      throw ASRError.invalidModelID
-    }
-    let downloaded = Self.isCompleteQwenModelDirectory(
-      Self.qwenModelDirectory(modelID: Self.qwenAlignerModelID)
-    )
-    if !downloaded { eventHandler(.downloading(0)) }
-    let folder = try await ModelUtils.resolveOrDownloadModel(
-      client: HubClient(cache: Self.qwenCache),
-      cache: Self.qwenCache,
-      repoID: repoID,
-      requiredExtension: "safetensors",
-      progressHandler: { progress in
         eventHandler(.downloading(progress.fractionCompleted))
       }
     )
     try Task.checkCancellation()
     eventHandler(.activating)
     let loaded = try await Task.detached(priority: .userInitiated) {
-      UnsafeSendable(
-        value: try await Qwen3ForcedAlignerModel.fromModelDirectory(folder)
+      UncheckedSendable(
+        value: try await Qwen3ASRModel.fromModelDirectory(modelFolder)
       )
     }.value.value
     try Task.checkCancellation()
-    qwenAligner = loaded
-  }
-
-  private func transcribeWhisper(_ audio: [Float], using whisper: WhisperKit) async throws
-    -> String
-  {
-    let options = DecodingOptions(
-      language: nil,
-      temperature: 0,
-      usePrefillPrompt: false,
-      detectLanguage: true
-    )
-    let results = try await whisper.transcribe(audioArray: audio, decodeOptions: options)
-    return results.map(\.text).joined(separator: " ")
+    qwen = loaded
   }
 
   private static func rootMeanSquare(_ samples: [Float]) -> Float {
@@ -400,9 +257,5 @@ enum ASRError: LocalizedError {
 }
 
 private struct UncheckedSendable<Value>: @unchecked Sendable {
-  let value: Value
-}
-
-private struct UnsafeSendable<Value>: @unchecked Sendable {
   let value: Value
 }

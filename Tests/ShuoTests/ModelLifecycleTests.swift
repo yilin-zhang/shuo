@@ -105,24 +105,6 @@ func modelStatusPrioritizesActiveThenLoadingThenAvailability() {
 }
 
 @Test
-func incompleteASRCacheIsNotDownloadable() throws {
-  let directory = try temporaryDirectory()
-  defer { try? FileManager.default.removeItem(at: directory) }
-
-  try createFile("config.json", in: directory)
-  #expect(!NativeASREngine.isCompleteWhisperModelDirectory(directory))
-
-  for path in [
-    "AudioEncoder.mlmodelc/coremldata.bin",
-    "TextDecoder.mlmodelc/coremldata.bin",
-    "MelSpectrogram.mlmodelc/coremldata.bin",
-  ] {
-    try createFile(path, in: directory)
-  }
-  #expect(NativeASREngine.isCompleteWhisperModelDirectory(directory))
-}
-
-@Test
 func qwenCacheRequiresConfigTokenizerAndWeights() throws {
   let directory = try temporaryDirectory()
   defer { try? FileManager.default.removeItem(at: directory) }

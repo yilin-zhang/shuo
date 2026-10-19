@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import WhisperKit
 
 enum HotkeyMode: String, CaseIterable, Identifiable {
   case hold
@@ -46,38 +45,20 @@ struct ModelGroup: Identifiable {
 enum ModelCatalog {
   static let defaultRefineModelID = "mlx-community/Qwen3-0.6B-4bit"
 
-  static let asrGroups: [ModelGroup] = {
-    let preferred = "large-v3-v20240930_turbo_632MB"
-    let supported = WhisperKit.recommendedModels().supported.map {
-      $0.replacingOccurrences(of: "openai_whisper-", with: "")
-    }
-    let ids = Array(Set(supported)).sorted {
-      if $0 == preferred { return true }
-      if $1 == preferred { return false }
-      return $0.localizedStandardCompare($1) == .orderedAscending
-    }
-    return [
-      ModelGroup(
-        id: "qwen3-asr",
-        title: "Qwen3-ASR",
-        options: [
-          ModelOption(
-            id: ASRBackend.qwenModelID,
-            name: "Qwen3-ASR 0.6B 4-bit",
-            detail: "",
-            isRecommended: true
-          )
-        ]
-      ),
-      ModelGroup(
-        id: "whisperkit",
-        title: "WhisperKit",
-        options: ids.map {
-          ModelOption(id: $0, name: displayName(for: $0), detail: "")
-        }
-      ),
-    ]
-  }()
+  static let asrGroups: [ModelGroup] = [
+    ModelGroup(
+      id: "qwen3-asr",
+      title: "Qwen3-ASR",
+      options: [
+        ModelOption(
+          id: NativeASREngine.defaultModelID,
+          name: "Qwen3-ASR 1.7B 4-bit",
+          detail: "",
+          isRecommended: true
+        )
+      ]
+    )
+  ]
 
   static let asrModels = asrGroups.flatMap(\.options)
 
@@ -93,27 +74,11 @@ enum ModelCatalog {
       name: "Qwen3 1.7B 4-bit",
       detail: L10n.string("model.reliable")
     ),
-    ModelOption(
-      id: "mlx-community/Qwen3-4B-4bit",
-      name: "Qwen3 4B 4-bit",
-      detail: L10n.string("model.quality")
-    ),
-    ModelOption(
-      id: "mlx-community/Qwen3-8B-4bit",
-      name: "Qwen3 8B 4-bit",
-      detail: L10n.string("model.highest")
-    ),
   ]
 
   static let refineGroups = [
     ModelGroup(id: "refine", title: nil, options: refineModels)
   ]
-
-  private static func displayName(for id: String) -> String {
-    id.replacingOccurrences(of: "_", with: " ")
-      .replacingOccurrences(of: "-", with: " ")
-      .capitalized
-  }
 }
 
 @MainActor

@@ -9,9 +9,10 @@
 A private, native macOS push-to-talk dictation app. Hold the right Option key,
 speak, and release to type the local transcription into the focused app.
 
-- Choose WhisperKit or Qwen3-ASR; both run entirely on the Mac.
-- Qwen3-ASR shows a live floating transcript using local agreement and its
-  companion forced-alignment model. Live transcription can be disabled in Settings.
+- Qwen3-ASR runs entirely on the Mac.
+- Qwen3-ASR shows a revisable live transcript using cumulative audio and token
+  prefix rollback. No forced-alignment companion is needed. Live transcription
+  can be disabled in Settings. Refinement runs after the final transcription.
 - Optional Qwen3 refinement runs with MLX on the Mac.
 - Qwen3-ASR can use an optional one-term-per-line terminology list during
   decoding. Terminology can improve specialist vocabulary, but may over-correct
@@ -100,3 +101,48 @@ granted again after an update.
 ## License
 
 Shuo is licensed under the [Apache License 2.0](LICENSE).
+
+## Qwen streaming module
+
+`Sources/QwenStreaming` is an independent library target, separate from Shuo's
+microphone, UI, and text injection. `QwenStreamingSession` accepts ordered 16 kHz
+mono Float PCM and an injectable asynchronous decoder; `QwenMLXDecoder` supplies
+the MLX implementation using public mlx-audio-swift APIs. No patched checkout or
+custom Metal operator is required.
+
+The algorithm follows [Qwen's reference streaming implementation](https://github.com/QwenLM/Qwen3-ASR/blob/main/qwen_asr/inference/qwen3_asr.py):
+accumulate audio, decode every 2 seconds, leave the first two decodes unprefixed,
+then roll back five tokens of the previous raw output and append the retained
+prefix to the assistant prompt. Unicode replacement-character boundaries are
+rolled back further. Each decode gets a fresh KV cache because its audio input
+has changed. This is cumulative re-decoding, not a cached incremental encoder.
+
+Shuo coalesces pending previews if inference falls behind rather than building a
+queue of stale decodes. On release it supplies the complete capture and performs
+one final decode, including sub-chunk tail audio. Previews remain revisable;
+refinement and text injection use only the final result. Audio is not trimmed
+using alignment timestamps or short energy-based pauses.
+
+Long utterances increase recomputation cost and memory use. Benchmark on the
+target Mac before choosing shorter update intervals. Prefix conditioning can
+retain earlier mistakes; this does not guarantee the accuracy of an independent
+full-utterance transcription. Token-budget exhaustion is reported as an error
+instead of silently emitting truncated text.
+
+Run the optional model-backed streaming smoke test with an existing model folder
+and a 16 kHz mono WAV (it does not download models or open the microphone):
+
+```sh
+SHUO_STREAMING_MODEL_DIR='/path/to/downloaded/qwen-model' \
+SHUO_QWEN_AUDIO_FIXTURE='/path/to/16k-mono.wav' \
+SHUO_QWEN_EXPECTED_TEXT='expected phrase' \
+SHUO_QWEN_EXPECTED_TAIL='expected last phrase' \
+./scripts/test-streaming.sh
+```
+
+This checks actual cumulative decoding, assistant-prefix preservation, Unicode,
+and the final audio tail. The normal suite uses an injected decoder to check
+session scheduling, cancellation, error propagation, and undelivered audio.
+
+The helper colocates the built Metal library with test binaries for Xcode test
+hosts that do not discover dependency resource bundles. GPU access is required.
